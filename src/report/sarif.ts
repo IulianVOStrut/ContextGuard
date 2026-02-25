@@ -1,0 +1,120 @@
+import type { ScanResult, Finding } from '../types.js';
+
+interface SarifLog {
+  version: string;
+  $schema: string;
+  runs: SarifRun[];
+}
+
+interface SarifRun {
+  tool: { driver: SarifDriver };
+  results: SarifResult[];
+}
+
+interface SarifDriver {
+  name: string;
+  version: string;
+  informationUri: string;
+  rules: SarifRule[];
+}
+
+interface SarifRule {
+  id: string;
+  name: string;
+  shortDescription: { text: string };
+  fullDescription: { text: string };
+  helpUri?: string;
+  properties: { tags: string[]; precision: string; 'problem.severity': string };
+}
+
+interface SarifResult {
+  ruleId: string;
+  level: string;
+  message: { text: string };
+  locations: SarifLocation[];
+}
+
+interface SarifLocation {
+  physicalLocation: {
+    artifactLocation: { uri: string; uriBaseId: string };
+    region: { startLine: number; endLine: number };
+  };
+}
+
+function severityToLevel(severity: string): string {
+  switch (severity) {
+    case 'critical':
+    case 'high': return 'error';
+    case 'medium': return 'warning';
+    default: return 'note';
+  }
+}
+
+function confidenceToPrecision(confidence: string): string {
+  switch (confidence) {
+    case 'high': return 'high';
+    case 'medium': return 'medium';
+    default: return 'low';
+  }
+}
+
+export function buildSarifReport(result: ScanResult): string {
+  const ruleIds = new Set(result.allFindings.map(f => f.id));
+
+  // Build unique rules from findings
+  const rulesMap = new Map<string, SarifRule>();
+  for (const finding of result.allFindings) {
+    if (!rulesMap.has(finding.id)) {
+      rulesMap.set(finding.id, {
+        id: finding.id,
+        name: finding.id,
+        shortDescription: { text: finding.title },
+        fullDescription: { text: `${finding.title}. ${finding.remediation}` },
+        properties: {
+          tags: ['security', 'prompt-injection'],
+          precision: confidenceToPrecision(finding.confidence),
+          'problem.severity': finding.severity,
+        },
+      });
+    }
+  }
+
+  const sarifResults: SarifResult[] = result.allFindings.map((f: Finding) => ({
+    ruleId: f.id,
+    level: severityToLevel(f.severity),
+    message: { text: `${f.title}: ${f.evidence}` },
+    locations: [{
+      physicalLocation: {
+        artifactLocation: {
+          uri: f.file.replace(/\\/g, '/'),
+          uriBaseId: '%SRCROOT%',
+        },
+        region: {
+          startLine: f.lineStart,
+          endLine: f.lineEnd,
+        },
+      },
+    }],
+  }));
+
+  const log: SarifLog = {
+    version: '2.1.0',
+    $schema: 'https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json',
+    runs: [{
+      tool: {
+        driver: {
+          name: 'ContextGuard',
+          version: '1.0.0',
+          informationUri: 'https://github.com/IulianVOStrut/ContextGuard',
+          rules: Array.from(rulesMap.values()),
+        },
+      },
+      results: sarifResults,
+    }],
+  };
+
+  // Suppress unused variable warning
+  void ruleIds;
+
+  return JSON.stringify(log, null, 2);
+}

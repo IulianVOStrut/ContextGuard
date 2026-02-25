@@ -1,0 +1,72 @@
+import type { Rule, RuleMatch } from './types.js';
+import type { ExtractedPrompt } from '../scanner/extractor.js';
+
+function matchPattern(prompt: ExtractedPrompt, pattern: RegExp): RuleMatch[] {
+  const results: RuleMatch[] = [];
+  const lines = prompt.text.split('\n');
+  lines.forEach((line, i) => {
+    if (pattern.test(line)) {
+      results.push({
+        evidence: line.trim(),
+        lineStart: prompt.lineStart + i,
+        lineEnd: prompt.lineStart + i,
+      });
+    }
+  });
+  return results;
+}
+
+export const unsafeToolsRules: Rule[] = [
+  {
+    id: 'TOOL-001',
+    title: 'Unbounded tool execution (run any command / browse anywhere)',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'unsafe-tools',
+    remediation: 'Restrict tool use with an explicit allowlist. State: "You may only use the following tools: [list]. Do not use any others."',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern = /(?:run (any|all|arbitrary) (command|code|script)|execute (any|arbitrary) (command|code|program)|browse (anywhere|any (site|url|website))|access (any|all) (file|system|resource|endpoint)|do anything the user (asks?|requests?|wants?))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'TOOL-002',
+    title: 'No tool allowlist or usage policy defined',
+    severity: 'medium',
+    confidence: 'low',
+    category: 'unsafe-tools',
+    remediation: 'Add a clear tool policy: "You may only call [tool names]. Refuse any request that requires tools outside this list."',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const hasTools = /(?:you (can|may|should|are able to) (call|use|invoke|execute)|available tools?|use the (following )?tools?|function calls?)/i.test(prompt.text);
+      const hasPolicy = /(?:only (use|call|invoke)|allowlist|allowed tools?|permitted tools?|do not (use|call) (other|additional|any other)|restrict(ed)? to)/i.test(prompt.text);
+      if (hasTools && !hasPolicy) {
+        return [{
+          evidence: prompt.text.split('\n')[0].trim(),
+          lineStart: prompt.lineStart,
+          lineEnd: prompt.lineStart,
+        }];
+      }
+      return [];
+    },
+  },
+  {
+    id: 'TOOL-003',
+    title: 'Code execution without sandboxing mention',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'unsafe-tools',
+    remediation: 'If code execution is needed, explicitly state sandbox constraints and disallow filesystem/network access unless required.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const hasCodeExec = /(?:execute (code|script|program)|run (code|script|program|command)|eval|shell (command|exec))/i.test(prompt.text);
+      const hasSandbox = /(?:sandbox|isolated?|no (file|network|internet|filesystem) access|read.only|cannot access (file|network|disk|system))/i.test(prompt.text);
+      if (hasCodeExec && !hasSandbox) {
+        return [{
+          evidence: prompt.text.split('\n')[0].trim(),
+          lineStart: prompt.lineStart,
+          lineEnd: prompt.lineStart,
+        }];
+      }
+      return [];
+    },
+  },
+];

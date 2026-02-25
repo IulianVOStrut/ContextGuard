@@ -1,0 +1,36 @@
+{
+  "include": [
+    "**/*.prompt",
+    "**/*.prompt.*",
+    "**/*.md",
+    "**/*.txt",
+    "**/*.yaml",
+    "**/*.yml",
+    "**/*.json",
+    "**/*.ts",
+    "**/*.js"
+  ],
+  "exclude": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**",
+    "**/coverage/**",
+    "**/*.min.js",
+    "**/*.lock",
+    "**/package-lock.json",
+    "**/attacks/**",
+    "**/tests/**",
+    "**/test/**",
+    "**/*.test.ts",
+    "**/*.test.js",
+    "**/*.spec.ts",
+    "**/*.spec.js",
+    "README.md",
+    "CHANGELOG.md",
+    "ContextGuard.md"
+  ],
+  "threshold": 60,
+  "formats": ["console"],
+  "verbose": false
+}

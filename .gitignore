@@ -1,0 +1,6 @@
+node_modules/
+dist/
+coverage/
+*.sarif
+prompt-audit-results.json
+.env
