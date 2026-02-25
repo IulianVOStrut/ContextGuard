@@ -28,6 +28,8 @@
     "**/*.spec.js",
     "README.md",
     "CHANGELOG.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
     "ContextGuard.md"
   ],
   "threshold": 60,
