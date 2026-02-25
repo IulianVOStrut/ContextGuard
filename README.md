@@ -1,6 +1,6 @@
 # ContextGuard
 
-> Static analysis tool that scans your codebase for LLM prompt-injection vulnerabilities — runs offline, no API calls required.
+> Static analysis tool that scans your codebase for LLM prompt-injection vulnerabilities. Runs offline, no API calls required.
 
 [![CI](https://github.com/IulianVOStrut/ContextGuard/actions/workflows/prompt-audit.yml/badge.svg)](https://github.com/IulianVOStrut/ContextGuard/actions/workflows/prompt-audit.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
@@ -11,7 +11,7 @@
 
 ## Why ContextGuard?
 
-As LLM-powered applications become common in production codebases, prompt injection has emerged as one of the most exploitable attack surfaces — yet most security scanners have no awareness of it.
+As LLM-powered applications become common in production codebases, prompt injection has emerged as one of the most exploitable attack surfaces; most security scanners have no awareness of it.
 
 ContextGuard brings static analysis to your prompt layer:
 
@@ -19,9 +19,9 @@ ContextGuard brings static analysis to your prompt layer:
 - Flags **leaked credentials and internal infrastructure** embedded in prompts
 - Detects **jailbreak-susceptible wording** in your system prompts
 - Identifies **unconstrained agentic tool use** that could be weaponised
-- Rewards **good security practice** — mitigations in your prompts reduce your score
+- Rewards **good security practice**: mitigations in your prompts reduce your score
 
-It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action — with zero external dependencies.
+It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action, with zero external dependencies.
 
 ---
 
@@ -30,7 +30,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 | | |
 |---|---|
 | **10 security rules** | Across 4 categories: injection, exfiltration, jailbreak, unsafe tool use |
-| **Numeric risk score (0–100)** | Normalized repo-level score with low / medium / high / critical thresholds |
+| **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
 | **GitHub Action included** | Fails CI on high risk and uploads SARIF results automatically |
@@ -64,7 +64,7 @@ prompt-audit scan --dir ./my-ai-project
 # Or via npm script (scans current directory)
 npm run prompt-audit
 
-# Verbose output — shows remediations and confidence levels
+# Verbose output, shows remediations and confidence levels
 prompt-audit scan --verbose
 
 # Fail the build on any critical finding
@@ -113,7 +113,7 @@ jobs:
           sarif_file: results.sarif
 ```
 
-Findings will appear in your repository's **Security → Code scanning** tab.
+Findings will appear in your repository's **Security > Code scanning** tab.
 
 ---
 
@@ -143,12 +143,12 @@ Create `.promptauditrc.json` in your project root to customise behaviour:
 |--------|---------|-------------|
 | `include` | `**/*.{ts,js,md,txt,yaml,yml,json}` | Glob patterns to scan |
 | `exclude` | `**/node_modules/**`, `**/dist/**`, etc. | Glob patterns to ignore |
-| `threshold` | `60` | Fail if repo score ≥ this value |
+| `threshold` | `60` | Fail if repo score is at or above this value |
 | `formats` | `["console"]` | Output formats: `console`, `json`, `sarif` |
 | `out` | auto | Base path for json/sarif output files |
 | `verbose` | `false` | Show remediations and confidence per finding |
-| `failOn` | — | Fail immediately on: `critical`, `high`, or `medium` |
-| `maxFindings` | — | Stop after N findings |
+| `failOn` | unset | Fail immediately on: `critical`, `high`, or `medium` |
+| `maxFindings` | unset | Stop after N findings |
 
 ---
 
@@ -157,25 +157,25 @@ Create `.promptauditrc.json` in your project root to customise behaviour:
 Each finding carries **risk points** calculated as:
 
 ```
-risk_points = severity_weight × confidence_multiplier
+risk_points = severity_weight x confidence_multiplier
 ```
 
 Points are totalled, capped at 100, and classified:
 
 | Score | Level | Suggested action |
 |-------|-------|-----------------|
-| 0–29 | 🟢 Low | No action required |
-| 30–59 | 🟡 Medium | Review before merging |
-| 60–79 | 🟠 High | Fix before merging |
-| 80–100 | 🔴 Critical | Block deployment |
+| 0-29 | 🟢 Low | No action required |
+| 30-59 | 🟡 Medium | Review before merging |
+| 60-79 | 🟠 High | Fix before merging |
+| 80-100 | 🔴 Critical | Block deployment |
 
-**Mitigation reduction:** if your prompts include explicit safety language (input delimiters, refusal-to-reveal instructions, tool allowlists), risk points for that prompt are reduced proportionally.
+If your prompts include explicit safety language (input delimiters, refusal-to-reveal instructions, tool allowlists), risk points for that prompt are reduced proportionally.
 
 ---
 
 ## Rules
 
-### A — Injection (INJ)
+### A. Injection (INJ)
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -184,7 +184,7 @@ Points are totalled, capped at 100, and classified:
 | INJ-003 | High | RAG/retrieved context included without untrusted separator |
 | INJ-004 | High | Tool-use instructions overridable by user content |
 
-### B — Exfiltration (EXF)
+### B. Exfiltration (EXF)
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -193,7 +193,7 @@ Points are totalled, capped at 100, and classified:
 | EXF-003 | High | Prompt indicates access to confidential or private data |
 | EXF-004 | High | Prompt includes internal URLs or infrastructure hostnames |
 
-### C — Jailbreak (JBK)
+### C. Jailbreak (JBK)
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -201,7 +201,7 @@ Points are totalled, capped at 100, and classified:
 | JBK-002 | High | Weak safety wording ("always comply", "no matter what") |
 | JBK-003 | High | Role-play escape hatch that undermines safety constraints |
 
-### D — Unsafe Tool Use (TOOL)
+### D. Unsafe Tool Use (TOOL)
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -239,7 +239,7 @@ Threshold: 60
 Total findings: 5
 By severity: critical: 2  high: 2  medium: 1
 
-✗ FAILED — score meets or exceeds threshold.
+✗ FAILED - score meets or exceeds threshold.
 ```
 
 ---
@@ -287,7 +287,7 @@ tests/
 
 ## Limitations
 
-- Rules use regex and structural heuristics, not full semantic analysis. False positives are possible — always review findings in context.
+- Rules use regex and structural heuristics, not full semantic analysis. False positives are possible; always review findings in context.
 - Prompts are not executed against a model; this is purely static analysis.
 - TypeScript/JavaScript extraction uses pattern matching rather than a full AST. Complex dynamic prompt construction may be missed.
 
