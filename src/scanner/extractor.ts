@@ -17,6 +17,9 @@ const SHELL_EXEC_PATTERN = /(?:execSync|execFile|spawnSync)\s*\(|(?:exec|spawn)\
 const MESSAGES_PUSH_PATTERN = /messages\s*(?:\??\.)?\s*push\s*\(\s*\{/i;
 const BASE64_CALL_PATTERN =
   /(?:atob|btoa)\s*\(|\.toString\s*\(\s*['"]base64['"]\s*\)|Buffer\.from\s*\([^)]+,\s*['"]base64['"]/i;
+const JSON_PARSE_PATTERN = /JSON\.parse\s*\(/i;
+const MD_RENDER_PATTERN =
+  /(?:marked\s*[.(]|marked\.parse\s*\(|markdownIt\s*[.(]|new\s+MarkdownIt|dangerouslySetInnerHTML\s*=)/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -162,7 +165,9 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
   if (
     SHELL_EXEC_PATTERN.test(content) ||
     MESSAGES_PUSH_PATTERN.test(content) ||
-    BASE64_CALL_PATTERN.test(content)
+    BASE64_CALL_PATTERN.test(content) ||
+    JSON_PARSE_PATTERN.test(content) ||
+    MD_RENDER_PATTERN.test(content)
   ) {
     results.push({
       text: content,

@@ -1,4 +1,4 @@
-import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules } from '../src/rules/index';
+import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules } from '../src/rules/index';
 import type { ExtractedPrompt } from '../src/scanner/extractor';
 
 function makePrompt(text: string, line = 1, kind: ExtractedPrompt['kind'] = 'raw'): ExtractedPrompt {
@@ -340,6 +340,106 @@ describe('EXF-005: Sensitive variable encoded as Base64', () => {
 
   it('does not flag btoa on a non-sensitive variable', () => {
     const prompt = makePrompt('const encoded = btoa(publicDisplayName);');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+// ── New injection rules (INJ-007, INJ-008) ────────────────────────────────────
+
+describe('INJ-007: User input in code-fence delimiter without sanitizing backticks', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-007')!;
+
+  it('flags template literal wrapping variable in triple backticks without replace', () => {
+    const prompt = makePrompt(
+      'const prompt = `Translate: \\`\\`\\`${userText}\\`\\`\\``;',
+      1, 'template-string'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when backticks are stripped from the variable first', () => {
+    const prompt = makePrompt(
+      'const safe = userText.replace(/`/g, "\'");\nconst prompt = `Translate: \\`\\`\\`${safe}\\`\\`\\``;',
+      1, 'template-string'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('INJ-008: HTTP request data in system-role message template', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-008')!;
+
+  it('flags req.body interpolated into role: "system" content template', () => {
+    const prompt = makePrompt(
+      'messages.push({ role: "system", content: `You are a bot. Settings: ${req.body.settings}` });',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('flags req.query in system role across multiple lines', () => {
+    const prompt = makePrompt(
+      'messages.push({\n  role: "system",\n  content: `You are an assistant. ${req.query.mode}`,\n});',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag a static system prompt with no request data', () => {
+    const prompt = makePrompt(
+      'messages.push({ role: "system", content: "You are a helpful assistant." });',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+// ── Output handling rules ────────────────────────────────────────────────────
+
+describe('OUT-001: JSON.parse of LLM output without schema validation', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-001')!;
+
+  it('flags JSON.parse of a response/content variable with no schema validator', () => {
+    const prompt = makePrompt(
+      'const data = JSON.parse(completion.content);\nif (data.isAdmin) grantAccess();',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when Zod schema validation is present in the file', () => {
+    const prompt = makePrompt(
+      'const raw = JSON.parse(response.content);\nconst validated = UserSchema.parse(raw);',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+
+  it('does not flag JSON.parse of a non-LLM variable name', () => {
+    const prompt = makePrompt(
+      'const config = JSON.parse(configFile);\nconsole.log(config.setting);',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('OUT-002: LLM output rendered via Markdown without DOMPurify', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-002')!;
+
+  it('flags marked.parse(llmResponse) without DOMPurify in the file', () => {
+    const prompt = makePrompt(
+      'const html = marked.parse(llmResponse.text);\ndiv.innerHTML = html;',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag marked.parse when DOMPurify is used in the same file', () => {
+    const prompt = makePrompt(
+      'const dirty = marked.parse(llmResponse.text);\nconst html = DOMPurify.sanitize(dirty);\ndiv.innerHTML = html;',
+      1, 'code-block'
+    );
     expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
   });
 });

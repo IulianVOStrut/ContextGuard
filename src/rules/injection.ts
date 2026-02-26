@@ -165,4 +165,88 @@ export const injectionRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'INJ-007',
+    title: 'User input wrapped in code-fence delimiters without sanitizing the delimiter',
+    severity: 'medium',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Before wrapping user input in triple-backtick fences, strip or escape backtick sequences from the input itself: input.replace(/`/g, "\'"). Otherwise an attacker can close the fence early and inject instructions.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Template literal containing ```${variable}``` without a preceding .replace on backticks.
+      // Matches both raw ``` and escaped \`\`\` (the form used inside TS/JS template literals).
+      const codeFenceVarPattern = /(?:```|\\`\\`\\`)\s*\$\{([a-zA-Z_$][a-zA-Z0-9_$.[\]'"]*)\}/;
+
+      lines.forEach((line, i) => {
+        const match = codeFenceVarPattern.exec(line);
+        if (!match) return;
+
+        const varName = match[1].split('.')[0]; // root variable name
+        // Check preceding 5 lines for a .replace stripping backticks from this variable
+        const lookback = lines.slice(Math.max(0, i - 5), i).join('\n');
+        const hasSanitize = new RegExp(
+          `${varName}\\s*\\.\\s*replace\\s*\\(\\s*\\/.*\`|${varName}\\s*=.*replace.*\``,
+        ).test(lookback);
+
+        if (!hasSanitize) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'INJ-008',
+    title: 'HTTP request data interpolated into system-role message template',
+    severity: 'high',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never interpolate request parameters (req.body, req.query, req.params) into a role: "system" message. Keep system prompts as static strings and pass user-supplied data exclusively through the role: "user" message.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      const systemRolePattern = /role\s*:\s*['"`]system['"`]/i;
+      // Template-literal content containing HTTP request data
+      const reqDataInTemplatePattern =
+        /content\s*:\s*`[^`]*\$\{(?:req|request|ctx|context|event|params)\s*[.[]/i;
+
+      lines.forEach((line, i) => {
+        // Check the same line (common inline form)
+        if (systemRolePattern.test(line) && reqDataInTemplatePattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+          return;
+        }
+
+        // Check multi-line form: role: "system" on one line, content template on next few
+        if (systemRolePattern.test(line)) {
+          const windowEnd = Math.min(i + 4, lines.length);
+          const window = lines.slice(i, windowEnd).join('\n');
+          if (reqDataInTemplatePattern.test(window)) {
+            results.push({
+              evidence: line.trim(),
+              lineStart: prompt.lineStart + i,
+              lineEnd: prompt.lineStart + i,
+            });
+          }
+        }
+      });
+
+      return results;
+    },
+  },
 ];

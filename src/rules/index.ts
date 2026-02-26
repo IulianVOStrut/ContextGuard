@@ -6,6 +6,7 @@ import { unsafeToolsRules } from './unsafeTools.js';
 import { commandInjectionRules } from './commandInjection.js';
 import { ragRules } from './rag.js';
 import { encodingRules } from './encoding.js';
+import { outputHandlingRules } from './outputHandling.js';
 
 export const allRules: Rule[] = [
   ...injectionRules,
@@ -15,9 +16,10 @@ export const allRules: Rule[] = [
   ...commandInjectionRules,
   ...ragRules,
   ...encodingRules,
+  ...outputHandlingRules,
 ];
 
-export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules };
+export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules };
 export type { Rule, RuleMatch } from './types.js';
 export { calcRiskPoints, ruleToFinding } from './types.js';
 export { scoreMitigations } from './mitigation.js';

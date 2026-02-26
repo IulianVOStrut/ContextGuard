@@ -42,7 +42,7 @@ npm test
 npm run test:watch
 ```
 
-All 36 tests must pass before submitting a pull request.
+All 64 tests must pass before submitting a pull request.
 
 ---
 

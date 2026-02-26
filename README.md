@@ -21,6 +21,7 @@ ContextGuard brings static analysis to your prompt layer:
 - Identifies **unconstrained agentic tool use** that could be weaponised
 - Detects **RAG corpus poisoning** and retrieved content injected as system instructions
 - Catches **encoding-based smuggling** (Base64 instructions that bypass string filters)
+- Flags **unsafe LLM output consumption**: JSON without schema validation and Markdown without sanitization
 - Rewards **good security practice**: mitigations in your prompts reduce your score
 
 It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action, with zero external dependencies.
@@ -31,7 +32,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **24 security rules** | Across 7 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding |
+| **28 security rules** | Across 8 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -187,6 +188,8 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | INJ-004 | High | Tool-use instructions overridable by user content |
 | INJ-005 | High | Serialised user object (`JSON.stringify`) interpolated directly into a prompt template |
 | INJ-006 | Medium | HTML comment containing hidden instruction verbs in user-controlled content |
+| INJ-007 | Medium | User input wrapped in code-fence delimiters without stripping backticks first |
+| INJ-008 | High | HTTP request data (`req.body`, `req.query`, `req.params`) interpolated into `role: "system"` template string |
 
 ### B. Exfiltration (EXF)
 
@@ -241,6 +244,15 @@ Detects encoding-based injection and evasion techniques where Base64 or similar 
 | ID | Severity | Description |
 |----|----------|-------------|
 | ENC-001 | Medium | `atob`, `btoa`, or `Buffer.from(x, 'base64')` called on a user-controlled variable near prompt construction |
+
+### H. Output Handling (OUT)
+
+Covers the output side of the LLM pipeline — how your application consumes model responses. Unsafe consumption can turn a prompt-injection payload into an application-level exploit.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| OUT-001 | Critical | `JSON.parse()` called on LLM output without schema validation (Zod, AJV, Joi, Yup) |
+| OUT-002 | Critical | LLM-generated Markdown or HTML rendered without DOMPurify or equivalent sanitizer |
 
 ---
 
@@ -299,6 +311,7 @@ src/
 │   ├── commandInjection.ts # CMD-* rules
 │   ├── rag.ts              # RAG-* rules
 │   ├── encoding.ts         # ENC-* rules
+│   ├── outputHandling.ts   # OUT-* rules
 │   ├── mitigation.ts       # Mitigation presence detection
 │   └── index.ts            # Rule registry
 ├── scoring/
