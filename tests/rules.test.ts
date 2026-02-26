@@ -1,4 +1,4 @@
-import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules } from '../src/rules/index';
+import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules } from '../src/rules/index';
 import type { ExtractedPrompt } from '../src/scanner/extractor';
 
 function makePrompt(text: string, line = 1, kind: ExtractedPrompt['kind'] = 'raw'): ExtractedPrompt {
@@ -680,6 +680,134 @@ describe('OUT-003: LLM output used directly in exec/eval/db.query', () => {
   it('does not flag parameterised db.query with static/user-validated input', () => {
     const prompt = makePrompt(
       'messages.push({ role: "user", content: input });\ndb.query("SELECT * FROM users WHERE id = ?", [userId]);',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+// ── Multimodal rules ─────────────────────────────────────────────────────────
+
+describe('VIS-001: User-supplied image URL to vision API', () => {
+  const rule = multimodalRules.find(r => r.id === 'VIS-001')!;
+
+  it('flags user-controlled URL in image_url structure', () => {
+    const prompt = makePrompt(
+      'const msg = {\n  type: "image_url",\n  image_url: { url: req.body.imageUrl }\n};',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('flags base64 data sourced from user input', () => {
+    const prompt = makePrompt(
+      'const part = { type: "image_url", image_url: { url: `data:image/jpeg;base64,${req.body.imageData}` } };',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag a static image URL', () => {
+    const prompt = makePrompt(
+      'const msg = { type: "image_url", image_url: { url: "https://cdn.example.com/photo.jpg" } };',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('VIS-002: User-supplied file path read into vision message', () => {
+  const rule = multimodalRules.find(r => r.id === 'VIS-002')!;
+
+  it('flags fs.readFileSync with user-supplied path in a vision context', () => {
+    const prompt = makePrompt(
+      [
+        'const img = fs.readFileSync(req.body.imagePath);',
+        'const b64 = img.toString("base64");',
+        'await openai.chat.completions.create({',
+        '  model: "gpt-4o",',
+        '  messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } }] }]',
+        '});',
+      ].join('\n'),
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag fs.readFileSync with a static path', () => {
+    const prompt = makePrompt(
+      [
+        'const img = fs.readFileSync("./assets/logo.png");',
+        'const b64 = img.toString("base64");',
+        'const msgType = "image_url";',
+      ].join('\n'),
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('VIS-003: Transcription output fed into prompt without sanitization', () => {
+  const rule = multimodalRules.find(r => r.id === 'VIS-003')!;
+
+  it('flags transcription result pushed directly into messages', () => {
+    const prompt = makePrompt(
+      [
+        'const result = await openai.audio.transcriptions.create({ file, model: "whisper-1" });',
+        'const transcriptionText = result.text;',
+        'messages.push({ role: "user", content: transcriptionText });',
+      ].join('\n'),
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when transcription output is sanitized before use', () => {
+    const prompt = makePrompt(
+      [
+        'const result = await openai.audio.transcriptions.create({ file, model: "whisper-1" });',
+        'const sanitized = sanitizeInput(result.text);',
+        'messages.push({ role: "user", content: sanitized });',
+      ].join('\n'),
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+
+  it('does not flag when no transcription API is present', () => {
+    const prompt = makePrompt(
+      'messages.push({ role: "user", content: transcriptionText });',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('VIS-004: OCR output piped into system instructions', () => {
+  const rule = multimodalRules.find(r => r.id === 'VIS-004')!;
+
+  it('flags OCR text interpolated into system role message', () => {
+    const prompt = makePrompt(
+      [
+        'const [result] = await vision.textDetection(imagePath);',
+        'const ocrText = result.textAnnotations[0].description;',
+        'await anthropic.messages.create({',
+        '  system: `Process the following: ${ocrText}`,',
+        '  messages: [{ role: "user", content: userMessage }]',
+        '});',
+      ].join('\n'),
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag OCR text used only in user-role messages', () => {
+    const prompt = makePrompt(
+      [
+        'const [result] = await vision.textDetection(imagePath);',
+        'const ocrText = result.textAnnotations[0].description;',
+        'messages.push({ role: "user", content: `Extracted text: ${ocrText}` });',
+      ].join('\n'),
       1, 'code-block'
     );
     expect(rule.check(prompt, 'test.ts')).toHaveLength(0);

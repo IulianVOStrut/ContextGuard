@@ -22,6 +22,12 @@ const MD_RENDER_PATTERN =
   /(?:marked\s*[.(]|marked\.parse\s*\(|markdownIt\s*[.(]|new\s+MarkdownIt|dangerouslySetInnerHTML\s*=)/i;
 // eval(variable) — triggers OUT-003; intentionally excludes eval('string literal')
 const EVAL_DYNAMIC_PATTERN = /\beval\s*\(\s*(?!['"`\d{[])/i;
+// Vision API image content structure — triggers VIS-001, VIS-002
+const VISION_API_PATTERN = /type\s*:\s*['"`]image_url['"`]/i;
+// Transcription API calls — triggers VIS-003
+const TRANSCRIPTION_API_PATTERN = /\.transcriptions\.create\s*\(|openai\.audio\.transcriptions/i;
+// OCR library/API calls — triggers VIS-004
+const OCR_API_PATTERN = /Tesseract\.createWorker\s*\(|vision\.textDetection\s*\(/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -170,7 +176,10 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
     BASE64_CALL_PATTERN.test(content) ||
     JSON_PARSE_PATTERN.test(content) ||
     MD_RENDER_PATTERN.test(content) ||
-    EVAL_DYNAMIC_PATTERN.test(content)
+    EVAL_DYNAMIC_PATTERN.test(content) ||
+    VISION_API_PATTERN.test(content) ||
+    TRANSCRIPTION_API_PATTERN.test(content) ||
+    OCR_API_PATTERN.test(content)
   ) {
     results.push({
       text: content,
