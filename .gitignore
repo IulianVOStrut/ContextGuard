@@ -1,9 +1,28 @@
 node_modules/
 dist/
 coverage/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Output files
 *.sarif
 prompt-audit-results.json
-.env
+
 # AI agent instruction files
 CLAUDE.md
 AGENTS.md
