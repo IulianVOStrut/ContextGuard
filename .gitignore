@@ -4,4 +4,12 @@ coverage/
 *.sarif
 prompt-audit-results.json
 .env
+# AI agent instruction files
 CLAUDE.md
+AGENTS.md
+GEMINI.md
+.cursorrules
+.cursor/
+.windsurfrules
+.aider*
+.continue/
