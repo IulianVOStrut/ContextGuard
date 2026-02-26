@@ -5,12 +5,14 @@ export interface ExtractedPrompt {
   text: string;
   lineStart: number;
   lineEnd: number;
-  kind: 'raw' | 'template-string' | 'object-field' | 'chat-message';
+  kind: 'raw' | 'template-string' | 'object-field' | 'chat-message' | 'code-block';
 }
 
 const PROMPT_KEY_PATTERN = /(?:^|["'])(?:system|prompt|instructions?|messages?|role|content|context|directive)(?:["']|\s*:)/i;
 const ROLE_CONTENT_PATTERN = /\{\s*["']?role["']?\s*:\s*["'][^"']+["']\s*,\s*["']?content["']?\s*:/i;
 const SYSTEM_PHRASE_PATTERN = /(?:you are|your (role|task|job|purpose) is|do not|don't|never|always|must|system:|instructions?:|you must|as an? (ai|assistant|bot))/i;
+// Shell execution pattern — triggers code-block extraction for CMD rule analysis
+const SHELL_EXEC_PATTERN = /(?:execSync|execFile|spawnSync)\s*\(|(?:exec|spawn)\s*\(\s*[`"']/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -148,6 +150,17 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
         kind: 'object-field',
       });
     }
+  }
+
+  // If the file contains shell execution calls, also expose the full file as a
+  // code-block so that CMD rules can analyse patterns that span multiple lines.
+  if (SHELL_EXEC_PATTERN.test(content)) {
+    results.push({
+      text: content,
+      lineStart: 1,
+      lineEnd: lines.length,
+      kind: 'code-block',
+    });
   }
 
   return results;

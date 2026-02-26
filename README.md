@@ -205,9 +205,19 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 
 | ID | Severity | Description |
 |----|----------|-------------|
-| TOOL-001 | Critical | Unbounded tool execution ("run any command", "browse anywhere") |
+| TOOL-001 | Critical | Unbounded tool execution ("run any command", "browse anywhere", backtick shell substitution) |
 | TOOL-002 | Medium | Tool use described with no allowlist or usage policy |
 | TOOL-003 | High | Code execution mentioned without sandboxing constraints |
+
+### E. Command Injection (CMD)
+
+Detects vulnerable patterns in the code surrounding AI tools, where a successful prompt injection can escalate into full command execution. Informed by real CVEs found in Google's Gemini CLI by Cyera Research Labs (2025).
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| CMD-001 | Critical | Shell command built with unsanitised variable interpolation (`execSync(\`cmd ${variable}\`)`) |
+| CMD-002 | High | Incomplete command substitution filtering: blocks `$()` but not backticks, or vice versa |
+| CMD-003 | High | File path from `glob.sync` or `readdirSync` used directly in a shell command without sanitisation |
 
 ---
 

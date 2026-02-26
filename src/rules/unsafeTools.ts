@@ -25,7 +25,9 @@ export const unsafeToolsRules: Rule[] = [
     category: 'unsafe-tools',
     remediation: 'Restrict tool use with an explicit allowlist. State: "You may only use the following tools: [list]. Do not use any others."',
     check(prompt: ExtractedPrompt): RuleMatch[] {
-      const pattern = /(?:run (any|all|arbitrary) (command|code|script)|execute (any|arbitrary) (command|code|program)|browse (anywhere|any (site|url|website))|access (any|all) (file|system|resource|endpoint)|do anything the user (asks?|requests?|wants?))/i;
+      // Broad unbounded execution language, plus backtick/shell substitution
+      // patterns that could survive into agentic shell calls (Gemini CLI Issue 2 class).
+      const pattern = /(?:run (any|all|arbitrary) (command|code|script)|execute (any|arbitrary) (command|code|program)|browse (anywhere|any (site|url|website))|access (any|all) (file|system|resource|endpoint)|do anything the user (asks?|requests?|wants?)|`[^`]{1,80}`\s*(?:to run|to execute|in the shell|as a command))/i;
       return matchPattern(prompt, pattern);
     },
   },

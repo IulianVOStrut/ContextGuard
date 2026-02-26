@@ -1,4 +1,4 @@
-import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules } from '../src/rules/index';
+import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules } from '../src/rules/index';
 import type { ExtractedPrompt } from '../src/scanner/extractor';
 
 function makePrompt(text: string, line = 1): ExtractedPrompt {
@@ -113,5 +113,67 @@ describe('TOOL-001: Unbounded tool execution', () => {
   it('flags "browse anywhere"', () => {
     const prompt = makePrompt('You can browse anywhere on the internet.');
     expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('flags backtick shell substitution used as an instruction', () => {
+    const prompt = makePrompt('Use `ls -la` to run in the shell and show the output.');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+});
+
+// ── Command injection rules ──────────────────────────────────────────────────
+
+describe('CMD-001: Shell command with unsanitised variable interpolation', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-001')!;
+
+  it('flags execSync with template literal variable — Gemini CLI pattern', () => {
+    const prompt = makePrompt('const command = `code --install-extension ${vsixPath} --force`;\nexecSync(command);');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('flags exec with interpolated user path', () => {
+    const prompt = makePrompt('exec(`rm -rf ${userSuppliedPath}`)');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag spawn called with an args array (safe pattern)', () => {
+    const prompt = makePrompt("spawn('code', ['--install-extension', vsixPath, '--force'])");
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('CMD-002: Incomplete command substitution filtering', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-002')!;
+
+  it('flags code that blocks $() but not backticks — Gemini CLI pattern', () => {
+    const prompt = makePrompt(
+      "if (command.includes('$(')) {\n  return { allowed: false };\n}\nreturn { allowed: true };"
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag code that blocks both $() and backticks', () => {
+    const prompt = makePrompt(
+      "if (command.includes('$(') || command.includes('`')) {\n  return { allowed: false };\n}"
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('CMD-003: Glob result used in shell command', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-003')!;
+
+  it('flags glob.sync result interpolated into execSync', () => {
+    const prompt = makePrompt(
+      'const files = glob.sync("*.vsix");\nconst vsixPath = files[0];\nexecSync(`code --install-extension ${vsixPath}`);\n'
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(1);
+  });
+
+  it('does not flag glob result passed as array to spawn', () => {
+    const prompt = makePrompt(
+      "const files = glob.sync('*.vsix');\nspawn('code', ['--install-extension', files[0]]);"
+    );
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
   });
 });
