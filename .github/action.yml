@@ -1,6 +1,6 @@
-name: 'ContextGuard Prompt Audit'
+name: 'ContextHound Scan'
 description: 'Scan LLM prompts for injection and security risks'
-author: 'ContextGuard'
+author: 'ContextHound'
 
 inputs:
   threshold:
@@ -16,7 +16,7 @@ inputs:
     required: false
     default: 'results.sarif'
   config:
-    description: 'Path to .promptauditrc.json config file'
+    description: 'Path to .contexthoundrc.json config file'
     required: false
     default: ''
 
@@ -28,7 +28,7 @@ runs:
       run: npm ci
       working-directory: ${{ github.workspace }}
 
-    - name: Run prompt audit
+    - name: Run ContextHound scan
       shell: bash
       run: |
         ARGS="--format console,sarif --out ${{ inputs.sarif-out }} --threshold ${{ inputs.threshold }}"
@@ -38,7 +38,7 @@ runs:
         if [ -n "${{ inputs.config }}" ]; then
           ARGS="$ARGS --config ${{ inputs.config }}"
         fi
-        npx prompt-audit scan $ARGS
+        npx hound scan $ARGS
       working-directory: ${{ github.workspace }}
 
     - name: Upload SARIF to GitHub Code Scanning

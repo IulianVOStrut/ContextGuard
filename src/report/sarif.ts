@@ -103,9 +103,9 @@ export function buildSarifReport(result: ScanResult): string {
     runs: [{
       tool: {
         driver: {
-          name: 'ContextGuard',
+          name: 'ContextHound',
           version: '1.0.0',
-          informationUri: 'https://github.com/IulianVOStrut/ContextGuard',
+          informationUri: 'https://github.com/IulianVOStrut/ContextHound',
           rules: Array.from(rulesMap.values()),
         },
       },

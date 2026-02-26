@@ -26,7 +26,7 @@ body:
     attributes:
       label: What problem does this solve?
       description: Describe the gap or pain point you are experiencing.
-      placeholder: "e.g. ContextGuard does not detect X, which means Y can happen undetected."
+      placeholder: "e.g. ContextHound does not detect X, which means Y can happen undetected."
     validations:
       required: true
 

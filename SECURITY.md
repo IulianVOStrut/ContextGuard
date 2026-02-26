@@ -10,7 +10,7 @@
 
 Please do not open a public GitHub issue for security vulnerabilities.
 
-Instead, report them privately via [GitHub's private vulnerability reporting](https://github.com/IulianVOStrut/ContextGuard/security/advisories/new).
+Instead, report them privately via [GitHub's private vulnerability reporting](https://github.com/IulianVOStrut/ContextHound/security/advisories/new).
 
 Include as much detail as possible:
 
@@ -29,5 +29,5 @@ This tool runs entirely offline and makes no network requests at runtime. The ma
 
 ## Out of Scope
 
-- Vulnerabilities in the LLM systems that ContextGuard scans (report those to the respective vendors)
+- Vulnerabilities in the LLM systems that ContextHound scans (report those to the respective vendors)
 - False positives (open a regular issue instead)

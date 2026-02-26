@@ -12,8 +12,8 @@ import type { AuditConfig, OutputFormat, FailOn } from './types.js';
 const program = new Command();
 
 program
-  .name('prompt-audit')
-  .description('ContextGuard: Scan LLM prompts for injection and security risks')
+  .name('hound')
+  .description('ContextHound: Scan LLM prompts for injection and security risks')
   .version('1.0.0');
 
 program
@@ -75,7 +75,7 @@ program
     // JSON report
     if (formats.includes('json')) {
       const json = buildJsonReport(result);
-      const outPath = config.out ? `${config.out}.json` : path.join(cwd, 'prompt-audit-results.json');
+      const outPath = config.out ? `${config.out}.json` : path.join(cwd, 'hound-results.json');
       fs.writeFileSync(outPath, json, 'utf8');
       console.log(`JSON report written to: ${outPath}`);
     }

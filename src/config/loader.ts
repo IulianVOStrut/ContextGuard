@@ -17,7 +17,7 @@ interface RcFile {
 export function loadConfig(configPath?: string, cwd: string = process.cwd()): AuditConfig {
   const rcPath = configPath
     ? path.resolve(configPath)
-    : path.join(cwd, '.promptauditrc.json');
+    : path.join(cwd, '.contexthoundrc.json');
 
   let rc: RcFile = {};
   if (fs.existsSync(rcPath)) {

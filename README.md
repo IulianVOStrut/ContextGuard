@@ -1,19 +1,19 @@
-# ContextGuard
+# ContextHound
 
 > Static analysis tool that scans your codebase for LLM prompt-injection vulnerabilities. Runs offline, no API calls required.
 
-[![CI](https://github.com/IulianVOStrut/ContextGuard/actions/workflows/prompt-audit.yml/badge.svg)](https://github.com/IulianVOStrut/ContextGuard/actions/workflows/prompt-audit.yml)
+[![CI](https://github.com/IulianVOStrut/ContextHound/actions/workflows/hound.yml/badge.svg)](https://github.com/IulianVOStrut/ContextHound/actions/workflows/hound.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## Why ContextGuard?
+## Why ContextHound?
 
 As LLM-powered applications become common in production codebases, prompt injection has emerged as one of the most exploitable attack surfaces; most security scanners have no awareness of it.
 
-ContextGuard brings static analysis to your prompt layer:
+ContextHound brings static analysis to your prompt layer:
 
 - Catches **injection paths** before they reach a model
 - Flags **leaked credentials and internal infrastructure** embedded in prompts
@@ -44,13 +44,13 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 ## Installation
 
 ```bash
-git clone https://github.com/IulianVOStrut/ContextGuard.git
-cd ContextGuard
+git clone https://github.com/IulianVOStrut/ContextHound.git
+cd ContextHound
 npm install
 npm run build
 ```
 
-To use `prompt-audit` as a global command:
+To use `hound` as a global command:
 
 ```bash
 npm link
@@ -62,19 +62,19 @@ npm link
 
 ```bash
 # Scan your project
-prompt-audit scan --dir ./my-ai-project
+hound scan --dir ./my-ai-project
 
 # Or via npm script (scans current directory)
-npm run prompt-audit
+npm run hound
 
 # Verbose output, shows remediations and confidence levels
-prompt-audit scan --verbose
+hound scan --verbose
 
 # Fail the build on any critical finding
-prompt-audit scan --fail-on critical
+hound scan --fail-on critical
 
 # Export JSON and SARIF reports
-prompt-audit scan --format console,json,sarif --out results
+hound scan --format console,json,sarif --out results
 ```
 
 Exit codes: `0` = passed, `1` = threshold exceeded or `--fail-on` triggered.
@@ -86,13 +86,13 @@ Exit codes: `0` = passed, `1` = threshold exceeded or `--fail-on` triggered.
 Add to your workflow to block merges when prompt risk is too high:
 
 ```yaml
-# .github/workflows/prompt-audit.yml
+# .github/workflows/hound.yml
 name: Prompt Audit
 
 on: [push, pull_request]
 
 jobs:
-  prompt-audit:
+  hound:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -107,7 +107,7 @@ jobs:
 
       - run: npm ci && npm run build
 
-      - run: npm run prompt-audit -- --format console,sarif --out results.sarif
+      - run: npm run hound -- --format console,sarif --out results.sarif
 
       - name: Upload to GitHub Code Scanning
         if: always()
@@ -122,7 +122,7 @@ Findings will appear in your repository's **Security > Code scanning** tab.
 
 ## Configuration
 
-Create `.promptauditrc.json` in your project root to customise behaviour:
+Create `.contexthoundrc.json` in your project root to customise behaviour:
 
 ```json
 {
@@ -269,7 +269,7 @@ Covers the output side of the LLM pipeline — how your application consumes mod
 ## Example Output
 
 ```
-=== ContextGuard Prompt Audit ===
+=== ContextHound Prompt Audit ===
 
 src/prompts/assistant.ts (file score: 73)
   [HIGH] INJ-001: Direct user input concatenation without delimiter
@@ -307,7 +307,7 @@ src/
 ├── types.ts                # Shared TypeScript types
 ├── config/
 │   ├── defaults.ts         # Default include/exclude globs and settings
-│   └── loader.ts           # .promptauditrc.json loader
+│   └── loader.ts           # .contexthoundrc.json loader
 ├── scanner/
 │   ├── discover.ts         # File discovery via fast-glob
 │   ├── extractor.ts        # Prompt extraction (raw, code, structured)
@@ -339,7 +339,7 @@ tests/
 .github/
 ├── action.yml              # Reusable composite GitHub Action
 └── workflows/
-    └── prompt-audit.yml    # Sample CI workflow
+    └── hound.yml    # Sample CI workflow
 ```
 
 ---

@@ -1,4 +1,4 @@
-name: Prompt Audit
+name: ContextHound Scan
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  prompt-audit:
+  context-hound:
     name: Scan for prompt injection risks
     runs-on: ubuntu-latest
     permissions:
@@ -30,8 +30,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run prompt audit
-        run: npm run prompt-audit -- --format console,sarif --out results.sarif --threshold 60
+      - name: Run ContextHound scan
+        run: npm run hound -- --format console,sarif --out results.sarif --threshold 60
         continue-on-error: false
 
       - name: Upload SARIF results

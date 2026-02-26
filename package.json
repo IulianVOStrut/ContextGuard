@@ -1,15 +1,15 @@
 {
-  "name": "context-guard",
+  "name": "context-hound",
   "version": "1.0.0",
-  "description": "Developer-first prompt-injection tester for CI and local use",
+  "description": "Developer-first prompt-injection scanner for CI and local use",
   "main": "dist/cli.js",
   "bin": {
-    "prompt-audit": "./dist/cli.js"
+    "hound": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "prompt-audit": "node dist/cli.js scan",
+    "hound": "node dist/cli.js scan",
     "test": "jest --forceExit",
     "test:watch": "jest --watch",
     "lint": "eslint src --ext .ts",

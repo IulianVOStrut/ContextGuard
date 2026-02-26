@@ -22,7 +22,7 @@ body:
       label: Steps to reproduce
       description: How can we reproduce the issue?
       placeholder: |
-        1. Run `prompt-audit scan --dir ./my-project`
+        1. Run `hound scan --dir ./my-project`
         2. See error ...
     validations:
       required: true
@@ -46,7 +46,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: ContextGuard version
+      label: ContextHound version
       description: Run `node dist/cli.js --version` or check your package.json.
       placeholder: "e.g. 1.0.0"
     validations:
@@ -76,7 +76,7 @@ body:
     id: config
     attributes:
       label: Configuration (optional)
-      description: Paste your `.promptauditrc.json` if relevant.
+      description: Paste your `.contexthoundrc.json` if relevant.
       render: json
 
   - type: textarea

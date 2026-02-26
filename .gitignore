@@ -21,7 +21,7 @@ Thumbs.db
 
 # Output files
 *.sarif
-prompt-audit-results.json
+hound-results.json
 
 # AI agent instruction files
 CLAUDE.md

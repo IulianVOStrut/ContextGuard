@@ -44,7 +44,7 @@ function printFinding(f: Finding, verbose: boolean): void {
 
 export function printConsoleReport(result: ScanResult, verbose: boolean = false): void {
   console.log();
-  console.log(`${BOLD}${MAGENTA}=== ContextGuard Prompt Audit ===${RESET}`);
+  console.log(`${BOLD}${MAGENTA}=== ContextHound Scan ===${RESET}`);
   console.log();
 
   if (result.allFindings.length === 0) {

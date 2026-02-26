@@ -1,4 +1,4 @@
-# Contributing to ContextGuard
+# Contributing to ContextHound
 
 Thank you for your interest in contributing. This guide covers everything you need to get started.
 
@@ -18,8 +18,8 @@ This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.
 ## Local Setup
 
 ```bash
-git clone https://github.com/IulianVOStrut/ContextGuard.git
-cd ContextGuard
+git clone https://github.com/IulianVOStrut/ContextHound.git
+cd ContextHound
 npm install
 npm run build
 ```
@@ -188,7 +188,7 @@ chore: upgrade fast-glob to 3.3.3
 3. Run `npm test` and confirm all tests pass.
 4. Run `npm run build` and confirm it compiles without errors.
 5. Open a pull request against `main` with a clear description of what changed and why.
-6. The CI workflow will run tests and the prompt-audit scanner automatically; fix any failures before requesting review.
+6. The CI workflow will run tests and the hound scanner automatically; fix any failures before requesting review.
 
 For significant changes (new rule categories, changes to scoring, CLI behaviour), open an issue first to discuss the approach.
 
