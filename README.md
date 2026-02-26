@@ -1,6 +1,6 @@
 # ContextHound
 
-> Static analysis tool that scans your codebase for LLM prompt-injection vulnerabilities. Runs offline, no API calls required.
+> Static analysis tool that scans your codebase for LLM prompt-injection and multimodal security vulnerabilities. Runs offline, no API calls required.
 
 [![CI](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml/badge.svg)](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
@@ -22,6 +22,7 @@ ContextHound brings static analysis to your prompt layer:
 - Detects **RAG corpus poisoning** and retrieved content injected as system instructions
 - Catches **encoding-based smuggling** (Base64 instructions that bypass string filters)
 - Flags **unsafe LLM output consumption**: JSON without schema validation and Markdown without sanitization
+- Detects **multimodal attack surfaces**: user-supplied image URLs to vision APIs, path traversal via vision message file reads, transcription output fed into prompts, and OCR text injected into system instructions
 - Rewards **good security practice**: mitigations in your prompts reduce your score
 
 It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action, with zero external dependencies.
@@ -32,7 +33,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **38 security rules** | Across 8 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling |
+| **42 security rules** | Across 9 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -86,7 +87,7 @@ Exit codes: `0` = passed, `1` = threshold exceeded or `--fail-on` triggered.
 Add to your workflow to block merges when prompt risk is too high:
 
 ```yaml
-# .github/workflows/hound.yml
+# .github/workflows/context-hound.yml
 name: Prompt Audit
 
 on: [push, pull_request]
@@ -264,6 +265,17 @@ Covers the output side of the LLM pipeline — how your application consumes mod
 | OUT-002 | Critical | LLM-generated Markdown or HTML rendered without DOMPurify or equivalent sanitizer |
 | OUT-003 | Critical | LLM output used directly as argument to `exec()`, `eval()`, or `db.query()` |
 
+### I. Multimodal (VIS)
+
+Covers trust-boundary violations specific to vision, audio/video, and OCR pipelines. Multimodal inputs are an emerging injection vector: an attacker who controls an image URL, an audio file, or a scanned document can use these rules' patterns to smuggle instructions into the model.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| VIS-001 | Critical | User-supplied image URL or base64 data forwarded to a vision API (gpt-4o, Claude 3, Gemini Vision) without domain or MIME validation |
+| VIS-002 | Critical | `fs.readFile`/`readFileSync` called with a user-controlled path in a file that also builds a vision API message — path traversal into multimodal input |
+| VIS-003 | High | Audio/video transcription output (Whisper, AssemblyAI, Deepgram, etc.) fed directly into prompt messages without sanitization — RAG poisoning via audio source |
+| VIS-004 | High | OCR output (Tesseract, Google Vision) interpolated into a `role: "system"` message or system prompt variable |
+
 ---
 
 ## Example Output
@@ -322,6 +334,7 @@ src/
 │   ├── rag.ts              # RAG-* rules
 │   ├── encoding.ts         # ENC-* rules
 │   ├── outputHandling.ts   # OUT-* rules
+│   ├── multimodal.ts       # VIS-* rules
 │   ├── mitigation.ts       # Mitigation presence detection
 │   └── index.ts            # Rule registry
 ├── scoring/
@@ -339,7 +352,7 @@ tests/
 .github/
 ├── action.yml              # Reusable composite GitHub Action
 └── workflows/
-    └── hound.yml    # Sample CI workflow
+    └── context-hound.yml    # CI workflow
 ```
 
 ---
@@ -359,7 +372,7 @@ Contributions are welcome. To add a new rule:
 1. Add it to the appropriate file in `src/rules/` (or create a new one for a new category)
 2. Register it in `src/rules/index.ts`
 3. Add at least one positive and one negative test case in `tests/rules.test.ts`
-4. Run `npm test` to verify all 54+ tests pass
+4. Run `npm test` to verify all 99 tests pass
 
 ---
 
