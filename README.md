@@ -2,7 +2,7 @@
 
 > Static analysis tool that scans your codebase for LLM prompt-injection vulnerabilities. Runs offline, no API calls required.
 
-[![CI](https://github.com/IulianVOStrut/ContextHound/actions/workflows/hound.yml/badge.svg)](https://github.com/IulianVOStrut/ContextHound/actions/workflows/hound.yml)
+[![CI](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml/badge.svg)](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
