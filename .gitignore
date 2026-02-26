@@ -4,3 +4,4 @@ coverage/
 *.sarif
 prompt-audit-results.json
 .env
+CLAUDE.md
