@@ -20,6 +20,7 @@
     "**/*.lock",
     "**/package-lock.json",
     "**/attacks/**",
+    "**/src/rules/**",
     "**/tests/**",
     "**/test/**",
     "**/*.test.ts",
