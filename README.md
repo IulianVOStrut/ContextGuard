@@ -19,6 +19,8 @@ ContextGuard brings static analysis to your prompt layer:
 - Flags **leaked credentials and internal infrastructure** embedded in prompts
 - Detects **jailbreak-susceptible wording** in your system prompts
 - Identifies **unconstrained agentic tool use** that could be weaponised
+- Detects **RAG corpus poisoning** and retrieved content injected as system instructions
+- Catches **encoding-based smuggling** (Base64 instructions that bypass string filters)
 - Rewards **good security practice**: mitigations in your prompts reduce your score
 
 It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action, with zero external dependencies.
@@ -29,7 +31,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **10 security rules** | Across 4 categories: injection, exfiltration, jailbreak, unsafe tool use |
+| **24 security rules** | Across 7 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -183,6 +185,8 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | INJ-002 | Medium | Missing "treat user content as data" boundary language |
 | INJ-003 | High | RAG/retrieved context included without untrusted separator |
 | INJ-004 | High | Tool-use instructions overridable by user content |
+| INJ-005 | High | Serialised user object (`JSON.stringify`) interpolated directly into a prompt template |
+| INJ-006 | Medium | HTML comment containing hidden instruction verbs in user-controlled content |
 
 ### B. Exfiltration (EXF)
 
@@ -192,6 +196,7 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | EXF-002 | Critical | Prompt instructs model to reveal system prompt or hidden instructions |
 | EXF-003 | High | Prompt indicates access to confidential or private data |
 | EXF-004 | High | Prompt includes internal URLs or infrastructure hostnames |
+| EXF-005 | High | Sensitive variable (token, password, key) encoded as Base64 in output |
 
 ### C. Jailbreak (JBK)
 
@@ -208,6 +213,7 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | TOOL-001 | Critical | Unbounded tool execution ("run any command", "browse anywhere", backtick shell substitution) |
 | TOOL-002 | Medium | Tool use described with no allowlist or usage policy |
 | TOOL-003 | High | Code execution mentioned without sandboxing constraints |
+| TOOL-004 | Critical | Tool description or schema field sourced from a user-controlled variable |
 
 ### E. Command Injection (CMD)
 
@@ -218,6 +224,23 @@ Detects vulnerable patterns in the code surrounding AI tools, where a successful
 | CMD-001 | Critical | Shell command built with unsanitised variable interpolation (`execSync(\`cmd ${variable}\`)`) |
 | CMD-002 | High | Incomplete command substitution filtering: blocks `$()` but not backticks, or vice versa |
 | CMD-003 | High | File path from `glob.sync` or `readdirSync` used directly in a shell command without sanitisation |
+
+### F. RAG Poisoning (RAG)
+
+Detects architectural mistakes in Retrieval-Augmented Generation pipelines that allow retrieved or ingested content to override system-level instructions.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| RAG-001 | High | Retrieved or external content assigned to `role: "system"` in a messages array |
+| RAG-002 | High | Instruction-like phrases ("system prompt:", "always return", "never redact") detected inside a document ingestion loop |
+
+### G. Encoding (ENC)
+
+Detects encoding-based injection and evasion techniques where Base64 or similar encodings are used to smuggle instructions past string-based filters.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| ENC-001 | Medium | `atob`, `btoa`, or `Buffer.from(x, 'base64')` called on a user-controlled variable near prompt construction |
 
 ---
 
@@ -273,6 +296,9 @@ src/
 │   ├── exfiltration.ts     # EXF-* rules
 │   ├── jailbreak.ts        # JBK-* rules
 │   ├── unsafeTools.ts      # TOOL-* rules
+│   ├── commandInjection.ts # CMD-* rules
+│   ├── rag.ts              # RAG-* rules
+│   ├── encoding.ts         # ENC-* rules
 │   ├── mitigation.ts       # Mitigation presence detection
 │   └── index.ts            # Rule registry
 ├── scoring/
@@ -310,7 +336,7 @@ Contributions are welcome. To add a new rule:
 1. Add it to the appropriate file in `src/rules/` (or create a new one for a new category)
 2. Register it in `src/rules/index.ts`
 3. Add at least one positive and one negative test case in `tests/rules.test.ts`
-4. Run `npm test` to verify all 28+ tests pass
+4. Run `npm test` to verify all 54+ tests pass
 
 ---
 

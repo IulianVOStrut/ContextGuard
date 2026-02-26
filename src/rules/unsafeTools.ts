@@ -71,4 +71,38 @@ export const unsafeToolsRules: Rule[] = [
       return [];
     },
   },
+  {
+    id: 'TOOL-004',
+    title: 'Tool description or schema field sourced from user-controlled variable',
+    severity: 'critical',
+    confidence: 'medium',
+    category: 'unsafe-tools',
+    remediation:
+      'Tool descriptions must be static, server-side strings defined in code. Never populate description, instructions, or system fields in a tool schema from user input or request parameters.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // Require a tool-like object structure: an object that has name: "string" (static)
+      // This filters out generic objects that happen to have a description field.
+      const hasNameStringProp = /name\s*:\s*['"`][^'"`\s]+['"`]/i.test(prompt.text);
+      if (!hasNameStringProp) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // description or instructions key where value starts with a variable (not a string literal)
+      const descVarPattern =
+        /(?:description|instructions?)\s*:\s*(?!['"`\d])\s*[a-zA-Z_$][a-zA-Z0-9_$.[\]'"]*\s*[,}]/i;
+
+      lines.forEach((line, i) => {
+        if (descVarPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

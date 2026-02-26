@@ -67,4 +67,37 @@ export const exfiltrationRules: Rule[] = [
       return matchPattern(prompt, pattern);
     },
   },
+  {
+    id: 'EXF-005',
+    title: 'Sensitive variable encoded as Base64 in output',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'exfiltration',
+    remediation:
+      'Never Base64-encode secrets, tokens, or credentials in LLM outputs. Encoded values bypass keyword-based filters. Validate and redact all model outputs before returning them to callers.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Variable names that suggest sensitive data
+      const sensitiveVarPattern =
+        /(?:secret|key|token|password|passwd|credential|auth|private|session|cookie)/i;
+
+      // Base64 encoding calls
+      const base64EncodePattern =
+        /(?:btoa\s*\(|\.toString\s*\(\s*['"]base64['"]\s*\)|Buffer\.from\s*\([^)]+\)\.toString\s*\(\s*['"]base64['"]\s*\))/i;
+
+      lines.forEach((line, i) => {
+        if (base64EncodePattern.test(line) && sensitiveVarPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

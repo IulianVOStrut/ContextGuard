@@ -100,4 +100,69 @@ export const injectionRules: Rule[] = [
       return [];
     },
   },
+  {
+    id: 'INJ-005',
+    title: 'Serialised user object interpolated into prompt',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Never pass JSON.stringify(userObject) directly into a prompt template. Extract only the specific fields you need and treat them as untrusted data with delimiters.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // JSON.stringify(variable) — argument is a variable, not a literal ({}, [], string)
+      const jsonStringifyVarPattern = /JSON\.stringify\s*\(\s*(?!['"`{\[]|\d)\s*[a-zA-Z_$]/i;
+
+      lines.forEach((line, i) => {
+        if (!jsonStringifyVarPattern.test(line)) return;
+        // Require prompt construction context on the same line or in the snippet
+        const inPromptContext =
+          prompt.kind === 'template-string' ||
+          prompt.kind === 'object-field' ||
+          prompt.kind === 'chat-message' ||
+          /(?:system|prompt|instruction|message|content|role)/i.test(line) ||
+          /(?:system|prompt|instruction|message|content|role)/i.test(prompt.text);
+        if (inPromptContext) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'INJ-006',
+    title: 'HTML comment with hidden instructions in user-controlled content',
+    severity: 'medium',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Strip HTML comments from all user-supplied content before inserting into prompts. Use a strict HTML sanitiser rather than a regex replacement.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // HTML comment containing an instruction-like verb
+      const htmlCommentInjection =
+        /<!--.*?(?:ignore|disregard|system|instruction|reveal|override|forget|bypass|execute|always|never).*?-->/i;
+
+      lines.forEach((line, i) => {
+        if (htmlCommentInjection.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

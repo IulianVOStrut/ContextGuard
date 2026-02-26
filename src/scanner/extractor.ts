@@ -11,8 +11,12 @@ export interface ExtractedPrompt {
 const PROMPT_KEY_PATTERN = /(?:^|["'])(?:system|prompt|instructions?|messages?|role|content|context|directive)(?:["']|\s*:)/i;
 const ROLE_CONTENT_PATTERN = /\{\s*["']?role["']?\s*:\s*["'][^"']+["']\s*,\s*["']?content["']?\s*:/i;
 const SYSTEM_PHRASE_PATTERN = /(?:you are|your (role|task|job|purpose) is|do not|don't|never|always|must|system:|instructions?:|you must|as an? (ai|assistant|bot))/i;
-// Shell execution pattern — triggers code-block extraction for CMD rule analysis
+// Patterns that trigger full-file code-block extraction so multi-line rules can
+// analyse the complete context (CMD, RAG, and encoding rules rely on this).
 const SHELL_EXEC_PATTERN = /(?:execSync|execFile|spawnSync)\s*\(|(?:exec|spawn)\s*\(\s*[`"']/i;
+const MESSAGES_PUSH_PATTERN = /messages\s*(?:\??\.)?\s*push\s*\(\s*\{/i;
+const BASE64_CALL_PATTERN =
+  /(?:atob|btoa)\s*\(|\.toString\s*\(\s*['"]base64['"]\s*\)|Buffer\.from\s*\([^)]+,\s*['"]base64['"]/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -152,9 +156,14 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
     }
   }
 
-  // If the file contains shell execution calls, also expose the full file as a
-  // code-block so that CMD rules can analyse patterns that span multiple lines.
-  if (SHELL_EXEC_PATTERN.test(content)) {
+  // Expose the full file as a code-block when it contains patterns that require
+  // multi-line analysis: shell exec calls (CMD rules), messages.push (RAG rules),
+  // or Base64 API calls (ENC/EXF rules).
+  if (
+    SHELL_EXEC_PATTERN.test(content) ||
+    MESSAGES_PUSH_PATTERN.test(content) ||
+    BASE64_CALL_PATTERN.test(content)
+  ) {
     results.push({
       text: content,
       lineStart: 1,
