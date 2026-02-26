@@ -105,4 +105,35 @@ export const unsafeToolsRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'TOOL-005',
+    title: 'Tool name or endpoint URL sourced from user-controlled input',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'unsafe-tools',
+    remediation:
+      'Tool names and endpoint URLs must be static allowlists defined in server-side code. Never populate them from req.body, req.query, or any other user-controlled source.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // name or url field set from an HTTP source via template literal or property access
+      const dynamicToolPattern =
+        /(?:name|url|endpoint)\s*:\s*(?:\$\{(?:req|request|ctx|input|user|params|query)\b|(?:req|request|ctx)\s*(?:\??\.)?\s*(?:body|query|params))/i;
+
+      lines.forEach((line, i) => {
+        if (dynamicToolPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

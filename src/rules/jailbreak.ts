@@ -63,4 +63,18 @@ export const jailbreakRules: Rule[] = [
       return matchPattern(prompt, pattern);
     },
   },
+  {
+    id: 'JBK-004',
+    title: 'Agent instructed to act without confirmation or human review',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'jailbreak',
+    remediation:
+      'Require explicit user confirmation for sensitive or irreversible actions. Remove language that disables human-in-the-loop review. Implement step-up authorisation for destructive tool calls.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:without\s+(?:asking|confirmation|user\s+approval|human\s+(?:review|approval|oversight))|no\s+(?:confirmation|approval|user\s+input)\s+(?:needed|required|necessary)|auto[-\s]?(?:run|execute|approve)\b|execute\s+immediately\b|don't\s+(?:ask|wait|pause|confirm)\b|proceed\s+automatically\b|take\s+action\s+(?:automatically|immediately|without\s+asking))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];

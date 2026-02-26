@@ -72,4 +72,67 @@ export const ragRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'RAG-003',
+    title: 'Agent memory written directly from user-controlled input',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Validate and sanitize all data before writing to memory stores. Store only structured, explicit facts (name, locale); never store free-form instructions or raw message content. Require user confirmation before persisting preferences.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Memory store write calls
+      const memoryWritePattern =
+        /(?:memory\s*(?:\??\.)?\s*(?:add|set|store|save|push|append)\s*\(|saveMemory\s*\(|storeMemory\s*\(|addMemory\s*\(|conversationStore\s*(?:\??\.)?\s*(?:set|add)\s*\(|memoryStore\s*(?:\??\.)?\s*(?:add|set)\s*\(|\.remember\s*\()/i;
+      // User-controlled input sources on the same line
+      const userInputPattern =
+        /(?:req\.body|req\.query|req\.params|request\.body|ctx\.body|ctx\.request\.body|userInput|userMessage)\b/i;
+
+      lines.forEach((line, i) => {
+        if (memoryWritePattern.test(line) && userInputPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'RAG-004',
+    title: 'Prompt instructs model to treat retrieved context as highest priority',
+    severity: 'medium',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Explicitly state that retrieved context is untrusted data and must not override developer instructions. Retrieved content should inform — not direct — model behavior.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:(?:retrieved|context|documents?|knowledge\s+base|search\s+results?).{0,60}(?:highest\s+priority|overrides?|takes?\s+precedence|more\s+important\s+than|supersedes?|always\s+follow|must\s+follow)|(?:always|must|strictly)\s+follow\s+(?:the\s+)?(?:retrieved|context|documents?|knowledge\s+base|search\s+results?))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];
+
+function matchPattern(prompt: ExtractedPrompt, pattern: RegExp): RuleMatch[] {
+  const results: RuleMatch[] = [];
+  const lines = prompt.text.split('\n');
+  lines.forEach((line, i) => {
+    if (pattern.test(line)) {
+      results.push({
+        evidence: line.trim(),
+        lineStart: prompt.lineStart + i,
+        lineEnd: prompt.lineStart + i,
+      });
+    }
+  });
+  return results;
+}

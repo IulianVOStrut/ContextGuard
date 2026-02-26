@@ -249,4 +249,78 @@ export const injectionRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'INJ-009',
+    title: 'HTTP request body parsed as messages array (role injection)',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never accept caller-supplied role/content structures. Construct the messages array server-side from a fixed schema and insert user input exclusively as a role: "user" message with validated content.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const text = prompt.text;
+
+      // Require messages/chat API context in the file
+      const messagesContextPattern =
+        /(?:messages\b|chat\.completions|createMessage|\.messages\s*[=:[{])/i;
+      if (!messagesContextPattern.test(text)) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = text.split('\n');
+
+      // JSON.parse called with an HTTP request source as the argument
+      const jsonParseReqPattern =
+        /JSON\.parse\s*\(\s*(?:req|request|ctx(?:\.request)?)\s*[.[]/i;
+
+      lines.forEach((line, i) => {
+        if (jsonParseReqPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'INJ-010',
+    title: 'Plaintext role-label transcript built with untrusted input',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    remediation:
+      'Use structured message arrays ({role, content}) instead of plaintext role-label transcripts. Labels like "User:", "Assistant:", "system:" can be spoofed by an attacker injecting the same format inside their input.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const text = prompt.text;
+
+      // Plaintext role labels in transcript format
+      const roleLabelPattern = /^\s*(?:user|human|assistant|ai|system|developer)\s*:\s*\S/im;
+      if (!roleLabelPattern.test(text)) return [];
+
+      // Untrusted input concatenated nearby (template literal or string join with user-sourced var)
+      const untrustedConcatPattern =
+        /\$\{(?:input|user\w*|query|message|request|text|prompt|content)\b|\+\s*(?:input|user\w*|query|message|request|text|prompt|content)\b/i;
+      if (!untrustedConcatPattern.test(text)) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = text.split('\n');
+
+      lines.forEach((line, i) => {
+        if (/^\s*(?:user|human|assistant|ai|system|developer)\s*:\s*/i.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

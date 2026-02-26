@@ -100,4 +100,74 @@ export const exfiltrationRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'EXF-006',
+    title: 'Full prompt or message array logged without redaction',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'exfiltration',
+    remediation:
+      'Redact system prompts and conversation history before logging. Capture metadata (model, token count, latency) in structured audit logs instead of raw prompt content.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // console.* or logger.* call on the same line as a sensitive prompt variable
+      const logCallPattern =
+        /(?:console\s*\.\s*(?:log|debug|info|warn|error|dir)|logger\s*\.\s*(?:log|debug|info|warn|error))\s*\(/i;
+      const sensitiveArgPattern =
+        /(?:messages|systemPrompt|system_prompt|prompt|instructions)\b/i;
+
+      lines.forEach((line, i) => {
+        if (logCallPattern.test(line) && sensitiveArgPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'EXF-007',
+    title: 'Secret value embedded in prompt alongside "never reveal" instruction',
+    severity: 'critical',
+    confidence: 'medium',
+    category: 'exfiltration',
+    remediation:
+      'Remove all secret values from prompts. A "never reveal" instruction does not protect embedded secrets — the model still processes and may expose the value. Store secrets server-side and reference them by purpose, not value.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const text = prompt.text;
+
+      // Prompt contains a secrecy instruction
+      const neverRevealPattern =
+        /(?:never\s+(?:reveal|share|disclose|expose|repeat)|do\s+not\s+(?:reveal|share|disclose|expose)|keep\s+(?:this|these|the\s+following)\s+(?:prompt|instructions?)?\s*(?:secret|hidden|private|confidential))/i;
+      if (!neverRevealPattern.test(text)) return [];
+
+      // AND the same block contains what looks like an actual secret value
+      const secretValuePattern =
+        /(?:sk-[a-zA-Z0-9]{20,}|api[_-]?key\s*[:=]\s*['"][^'"]{8,}['"]|password\s*[:=]\s*['"][^'"]{6,}['"]|[Aa][Ww][Ss][_A-Z]*\s*[:=]\s*['"][A-Z0-9]{16,}['"]|bearer\s+[A-Za-z0-9._-]{20,})/i;
+      if (!secretValuePattern.test(text)) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = text.split('\n');
+
+      lines.forEach((line, i) => {
+        if (secretValuePattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

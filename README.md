@@ -32,7 +32,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **28 security rules** | Across 8 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling |
+| **38 security rules** | Across 8 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -190,6 +190,8 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | INJ-006 | Medium | HTML comment containing hidden instruction verbs in user-controlled content |
 | INJ-007 | Medium | User input wrapped in code-fence delimiters without stripping backticks first |
 | INJ-008 | High | HTTP request data (`req.body`, `req.query`, `req.params`) interpolated into `role: "system"` template string |
+| INJ-009 | Critical | HTTP request body parsed as the messages array directly — attacker controls role and content |
+| INJ-010 | High | Plaintext role-label transcript (`User:`, `Assistant:`, `system:`) built with untrusted input concatenation |
 
 ### B. Exfiltration (EXF)
 
@@ -200,6 +202,8 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | EXF-003 | High | Prompt indicates access to confidential or private data |
 | EXF-004 | High | Prompt includes internal URLs or infrastructure hostnames |
 | EXF-005 | High | Sensitive variable (token, password, key) encoded as Base64 in output |
+| EXF-006 | High | Full prompt or message array logged via `console.log` / `logger.*` without redaction |
+| EXF-007 | Critical | Actual secret value embedded in prompt alongside a "never reveal" instruction |
 
 ### C. Jailbreak (JBK)
 
@@ -208,6 +212,7 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | JBK-001 | Critical | Known jailbreak phrase detected ("ignore instructions", "DAN", etc.) |
 | JBK-002 | High | Weak safety wording ("always comply", "no matter what") |
 | JBK-003 | High | Role-play escape hatch that undermines safety constraints |
+| JBK-004 | High | Agent instructed to act without confirmation or human review ("proceed automatically", "no confirmation needed") |
 
 ### D. Unsafe Tool Use (TOOL)
 
@@ -217,6 +222,7 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | TOOL-002 | Medium | Tool use described with no allowlist or usage policy |
 | TOOL-003 | High | Code execution mentioned without sandboxing constraints |
 | TOOL-004 | Critical | Tool description or schema field sourced from a user-controlled variable |
+| TOOL-005 | Critical | Tool `name` or endpoint `url` sourced from user-controlled input (`req.body`, `req.query`, etc.) |
 
 ### E. Command Injection (CMD)
 
@@ -236,6 +242,8 @@ Detects architectural mistakes in Retrieval-Augmented Generation pipelines that 
 |----|----------|-------------|
 | RAG-001 | High | Retrieved or external content assigned to `role: "system"` in a messages array |
 | RAG-002 | High | Instruction-like phrases ("system prompt:", "always return", "never redact") detected inside a document ingestion loop |
+| RAG-003 | High | Agent memory store written directly from user-controlled input without validation |
+| RAG-004 | Medium | Prompt instructs model to treat retrieved context as highest priority, overriding developer instructions |
 
 ### G. Encoding (ENC)
 
@@ -244,6 +252,7 @@ Detects encoding-based injection and evasion techniques where Base64 or similar 
 | ID | Severity | Description |
 |----|----------|-------------|
 | ENC-001 | Medium | `atob`, `btoa`, or `Buffer.from(x, 'base64')` called on a user-controlled variable near prompt construction |
+| ENC-002 | High | Hidden Unicode control characters (zero-width spaces, bidi overrides) detected near instruction keywords |
 
 ### H. Output Handling (OUT)
 
@@ -253,6 +262,7 @@ Covers the output side of the LLM pipeline — how your application consumes mod
 |----|----------|-------------|
 | OUT-001 | Critical | `JSON.parse()` called on LLM output without schema validation (Zod, AJV, Joi, Yup) |
 | OUT-002 | Critical | LLM-generated Markdown or HTML rendered without DOMPurify or equivalent sanitizer |
+| OUT-003 | Critical | LLM output used directly as argument to `exec()`, `eval()`, or `db.query()` |
 
 ---
 

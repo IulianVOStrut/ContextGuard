@@ -20,6 +20,8 @@ const BASE64_CALL_PATTERN =
 const JSON_PARSE_PATTERN = /JSON\.parse\s*\(/i;
 const MD_RENDER_PATTERN =
   /(?:marked\s*[.(]|marked\.parse\s*\(|markdownIt\s*[.(]|new\s+MarkdownIt|dangerouslySetInnerHTML\s*=)/i;
+// eval(variable) — triggers OUT-003; intentionally excludes eval('string literal')
+const EVAL_DYNAMIC_PATTERN = /\beval\s*\(\s*(?!['"`\d{[])/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -167,7 +169,8 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
     MESSAGES_PUSH_PATTERN.test(content) ||
     BASE64_CALL_PATTERN.test(content) ||
     JSON_PARSE_PATTERN.test(content) ||
-    MD_RENDER_PATTERN.test(content)
+    MD_RENDER_PATTERN.test(content) ||
+    EVAL_DYNAMIC_PATTERN.test(content)
   ) {
     results.push({
       text: content,

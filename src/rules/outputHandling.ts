@@ -89,4 +89,38 @@ export const outputHandlingRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'OUT-003',
+    title: 'LLM output used directly in exec(), eval(), or database query',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never execute LLM output as code or SQL. Parse the response into a strict schema first, then use parameterised queries or a dedicated command parser. Treat all model output as untrusted user input.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Dangerous execution sinks
+      const execSinkPattern =
+        /(?:\beval\s*\(|new\s+Function\s*\(|(?:exec|execSync|execFile)\s*\(|db\s*(?:\??\.)?\s*(?:query|execute|run)\s*\(|connection\s*(?:\??\.)?\s*query\s*\(|pool\s*(?:\??\.)?\s*query\s*\()/i;
+      // Variable names that suggest LLM output as the argument
+      const llmOutputArgPattern =
+        /(?:llm|ai|gpt|claude|model|completion|response|output|result|answer|generated|message\.content|choices\[)/i;
+
+      lines.forEach((line, i) => {
+        if (execSinkPattern.test(line) && llmOutputArgPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

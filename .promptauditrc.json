@@ -21,6 +21,7 @@
     "**/package-lock.json",
     "**/attacks/**",
     "**/src/rules/**",
+    "**/src/scanner/**",
     "**/tests/**",
     "**/test/**",
     "**/*.test.ts",
@@ -32,7 +33,10 @@
     "SECURITY.md",
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
-    "ContextGuard.md"
+    "ContextGuard.md",
+    "CLAUDE.md",
+    "AGENTS.md",
+    "GEMINI.md"
   ],
   "threshold": 60,
   "formats": ["console"],
