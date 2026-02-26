@@ -323,4 +323,42 @@ export const injectionRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'INJ-011',
+    title: 'Browser DOM or URL source fed directly into LLM call',
+    severity: 'high',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never read from window.location, document.cookie, innerHTML, or DOM elements and pass that value directly to an LLM API. Validate and sanitize all client-side inputs server-side before including them in prompts — treat them with the same distrust as req.body.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const text = prompt.text;
+
+      // Require LLM API call context in the file
+      const llmContextPattern =
+        /(?:openai|anthropic|gemini|\.chat\.completions|\.messages\.create|messages\s*(?:\??\.)?\s*push|systemPrompt|createCompletion|\.complete\s*\()/i;
+      if (!llmContextPattern.test(text)) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = text.split('\n');
+
+      // Browser/client-side sources that carry attacker-controlled content
+      const domSourcePattern =
+        /(?:window\.location\.(?:search|hash|href|pathname)\b|document\.cookie\b|document\.querySelector\s*\(|document\.getElementById\s*\(|(?:element|el|node|div|span|input)\s*(?:\??\.)?\s*(?:inner|outer)HTML\b|new\s+URLSearchParams\s*\(\s*window\.location|location\.(?:search|hash)\b)/i;
+
+      lines.forEach((line, i) => {
+        if (domSourcePattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];

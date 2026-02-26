@@ -28,6 +28,8 @@ const VISION_API_PATTERN = /type\s*:\s*['"`]image_url['"`]/i;
 const TRANSCRIPTION_API_PATTERN = /\.transcriptions\.create\s*\(|openai\.audio\.transcriptions/i;
 // OCR library/API calls — triggers VIS-004
 const OCR_API_PATTERN = /Tesseract\.createWorker\s*\(|vision\.textDetection\s*\(/i;
+// Browser DOM / URL sources — triggers INJ-011
+const DOM_SOURCE_PATTERN = /window\.location\.(?:search|hash|href)|document\.cookie\b|document\.querySelector\s*\(|document\.getElementById\s*\(/i;
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
@@ -179,7 +181,8 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
     EVAL_DYNAMIC_PATTERN.test(content) ||
     VISION_API_PATTERN.test(content) ||
     TRANSCRIPTION_API_PATTERN.test(content) ||
-    OCR_API_PATTERN.test(content)
+    OCR_API_PATTERN.test(content) ||
+    DOM_SOURCE_PATTERN.test(content)
   ) {
     results.push({
       text: content,

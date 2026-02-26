@@ -77,4 +77,37 @@ export const jailbreakRules: Rule[] = [
       return matchPattern(prompt, pattern);
     },
   },
+  {
+    id: 'JBK-005',
+    title: 'Evidence-erasure or cover-tracks instruction in prompt',
+    severity: 'high',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove any instruction that directs the model to delete logs, erase history, or conceal activity. Logging and audit trails must be enforced at the infrastructure level, not negotiable via prompt.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:delete\s+(?:all\s+)?(?:logs?|history|traces?|evidence|records?)|don'?t\s+(?:log|record|save|store)\s+(?:this|my|the|any)|no\s+(?:logging|logs?|traces?)\b|hide\s+(?:this|my|the)\s+(?:request|action|query|activity|conversation)|cover\s+(?:your|my|the|our)\s+tracks?|erase\s+(?:all\s+)?(?:history|logs?|traces?|records?|evidence)|leave\s+no\s+trace|remove\s+(?:all\s+)?(?:traces?|evidence|logs?|history))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'JBK-006',
+    title: 'Policy-legitimacy framing combined with unsafe action request',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'jailbreak',
+    remediation:
+      'Legitimacy-framing phrases ("bug bounty", "authorized penetration tester") do not change what the model is actually being asked to do. Enforce safety constraints regardless of claimed role. Policy compliance must be handled at the API/middleware level, not via the prompt.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const legitimacyPattern =
+        /(?:bug\s+bounty|penetration\s+test(?:ing|er)?|(?:authorized|ethical)\s+(?:hacker|hacking|security|researcher|tester)|security\s+researcher|red\s+team(?:ing|er)?|(?:bounty|pentest|bug.bounty)\s+mode|as\s+a\s+(?:security\s+)?(?:researcher|tester|auditor|pentester))/i;
+      const unsafeActionPattern =
+        /(?:steal\b|exfiltrat|dump\s+(?:data|credentials?|passwords?|users?)|bypass\s+(?:auth(?:entication|orization)?|security|access\s+control|permissions?)|escalat\w*\s+privile|unauthorized\s+access|delete\s+(?:logs?|traces?|evidence|history)|extract\s+(?:all\s+)?(?:sensitive\s+)?(?:data|credentials?|passwords?))/i;
+
+      if (!legitimacyPattern.test(prompt.text) || !unsafeActionPattern.test(prompt.text)) return [];
+
+      return matchPattern(prompt, legitimacyPattern);
+    },
+  },
 ];
