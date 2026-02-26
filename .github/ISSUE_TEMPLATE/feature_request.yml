@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new rule, output format, or other improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. The more context you provide, the easier it is to evaluate and implement.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: What kind of feature is this?
+      options:
+        - New security rule
+        - Improvement to an existing rule
+        - New output format
+        - CLI option or configuration
+        - Performance improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the gap or pain point you are experiencing.
+      placeholder: "e.g. ContextGuard does not detect X, which means Y can happen undetected."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like this to work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example (optional)
+      description: |
+        For a new rule: paste a code or prompt snippet that should trigger it, and one that should not.
+        For other features: show what the CLI output or config option might look like.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any other approaches you thought about?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links, CVEs, research papers, or anything else relevant.
