@@ -38,6 +38,8 @@
     "**/attacks/**",
     "**/src/rules/**",
     "**/src/scanner/**",
+    "**/src/cli.ts",
+    "**/src/report/**",
     "**/tests/**",
     "**/test/**",
     "**/*.test.ts",
