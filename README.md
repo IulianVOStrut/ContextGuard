@@ -27,6 +27,7 @@ ContextHound brings static analysis to your prompt layer:
 - Catches **encoding-based smuggling** (Base64 instructions that bypass string filters)
 - Flags **unsafe LLM output consumption**: JSON without schema validation and Markdown without sanitization
 - Detects **multimodal attack surfaces**: user-supplied image URLs to vision APIs, path traversal via vision message file reads, transcription output fed into prompts, and OCR text injected into system instructions
+- Flags **agentic risks**: unbounded agent loops, unvalidated memory writes, plan injection, and tool parameters receiving system-prompt content
 - Rewards **good security practice**: mitigations in your prompts reduce your score
 
 It fits into your existing workflow as a CLI command, an `npm` script, or a GitHub Action, with zero external dependencies.
@@ -37,12 +38,14 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| \*\*61 security rules\*\* | Across 10 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace |
+| **68 security rules** | Across 11 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
-| **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
+| **6 output formats** | Console, JSON, SARIF, GitHub Annotations, Markdown, and JSONL streaming |
 | **GitHub Action included** | Fails CI on high risk and uploads SARIF results automatically |
 | **Multi-language scanning** | Detects LLM API usage in Python, Go, Rust, Java, C#, PHP, Ruby, Swift, Kotlin, Vue, Bash — not just TypeScript/JavaScript |
+| **Rule filtering** | `excludeRules`/`includeRules` with prefix-glob syntax (`CMD-*`); `minConfidence` filter |
+| **Watch mode** | `--watch` re-scans on file changes and shows delta findings |
 | **Fully offline** | No API calls, no telemetry, no paid dependencies |
 
 ---
@@ -67,6 +70,9 @@ npm link
 ## Quick Start
 
 ```bash
+# Scaffold a config file
+hound init
+
 # Scan your project
 hound scan --dir ./my-ai-project
 
@@ -81,9 +87,37 @@ hound scan --fail-on critical
 
 # Export JSON and SARIF reports
 hound scan --format console,json,sarif --out results
+
+# GitHub Annotations (for CI step summaries)
+hound scan --format github-annotations
+
+# Markdown report with findings tables
+hound scan --format markdown --out report
+
+# Stream findings as JSONL (one JSON object per line)
+hound scan --format jsonl | jq '.severity'
+
+# List all 68 rules
+hound scan --list-rules
+
+# Re-scan on file changes
+hound scan --watch
+
+# Only run high-confidence rules
+hound scan --config .contexthoundrc.json  # set minConfidence: "high"
+
+# Fail if any single file scores >= 40
+hound scan --fail-file-threshold 40
 ```
 
-Exit codes: `0` = passed, `1` = threshold exceeded or `--fail-on` triggered.
+**Exit codes:**
+
+| Code | Meaning |
+|------|---------|
+| `0` | Passed — score below threshold, no `failOn` violation |
+| `1` | Unhandled error or bad arguments |
+| `2` | Threshold breached — repo score ≥ threshold, or file threshold exceeded |
+| `3` | `--fail-on` violation — finding of the specified severity found |
 
 ---
 
@@ -113,7 +147,7 @@ jobs:
 
       - run: npm ci && npm run build
 
-      - run: npm run hound -- --format console,sarif --out results.sarif
+      - run: npm run hound -- --format console,sarif,github-annotations --out results.sarif
 
       - name: Upload to GitHub Code Scanning
         if: always()
@@ -122,13 +156,13 @@ jobs:
           sarif_file: results.sarif
 ```
 
-Findings will appear in your repository's **Security > Code scanning** tab.
+Findings will appear in your repository's **Security > Code scanning** tab. The `github-annotations` format posts inline PR comments and writes a summary table to the GitHub step summary.
 
 ---
 
 ## Configuration
 
-Create `.contexthoundrc.json` in your project root to customise behaviour:
+Run `hound init` to scaffold a `.contexthoundrc.json`, or create one manually:
 
 ```json
 {
@@ -144,7 +178,11 @@ Create `.contexthoundrc.json` in your project root to customise behaviour:
   "out": "results",
   "verbose": false,
   "failOn": "critical",
-  "maxFindings": 50
+  "maxFindings": 50,
+  "excludeRules": ["JBK-002"],
+  "includeRules": [],
+  "minConfidence": "medium",
+  "failFileThreshold": 80
 }
 ```
 
@@ -152,12 +190,32 @@ Create `.contexthoundrc.json` in your project root to customise behaviour:
 |--------|---------|-------------|
 | `include` | `**/*.{ts,tsx,js,jsx,py,go,rs,java,kt,cs,php,rb,swift,vue,sh,bash,hs,md,txt,yaml,yml,json}` | Glob patterns to scan |
 | `exclude` | `**/node_modules/**`, `**/dist/**`, etc. | Glob patterns to ignore |
-| `threshold` | `60` | Fail if repo score is at or above this value |
-| `formats` | `["console"]` | Output formats: `console`, `json`, `sarif` |
-| `out` | auto | Base path for json/sarif output files |
+| `threshold` | `60` | Fail if repo score is at or above this value (exit code 2) |
+| `formats` | `["console"]` | Output formats: `console`, `json`, `sarif`, `github-annotations`, `markdown`, `jsonl` |
+| `out` | auto | Base path for file output |
 | `verbose` | `false` | Show remediations and confidence per finding |
-| `failOn` | unset | Fail immediately on: `critical`, `high`, or `medium` |
+| `failOn` | unset | Exit code 3 on first finding of: `critical`, `high`, or `medium` |
 | `maxFindings` | unset | Stop after N findings |
+| `excludeRules` | `[]` | Rule IDs or prefix globs to skip (e.g. `"CMD-*"`, `"JBK-002"`) |
+| `includeRules` | `[]` | Run only these rule IDs (empty = run all) |
+| `minConfidence` | unset | Skip rules below this confidence: `low`, `medium`, or `high` |
+| `failFileThreshold` | unset | Fail (exit code 2) if any single file scores at or above this value |
+
+### Environment variable overrides
+
+All key settings can be overridden at runtime without editing the config file:
+
+| Variable | Overrides |
+|----------|-----------|
+| `HOUND_THRESHOLD` | `threshold` |
+| `HOUND_FAIL_ON` | `failOn` |
+| `HOUND_MIN_CONFIDENCE` | `minConfidence` |
+| `HOUND_VERBOSE` | `verbose` (truthy: `1`, `true`, `yes`) |
+| `HOUND_CONFIG` | path to config file |
+
+### `.houndignore`
+
+Place a `.houndignore` file in your project root to add exclusion patterns without editing `.contexthoundrc.json`. Follows the same glob syntax; lines starting with `#` are comments.
 
 ---
 
@@ -166,7 +224,7 @@ Create `.contexthoundrc.json` in your project root to customise behaviour:
 Each finding carries **risk points** calculated as:
 
 ```
-risk_points = severity_weight x confidence_multiplier
+risk_points = severity_weight × confidence_multiplier
 ```
 
 Points are totalled, capped at 100, and classified:
@@ -222,6 +280,9 @@ If your prompts include explicit safety language (input delimiters, refusal-to-r
 | JBK-004 | High | Agent instructed to act without confirmation or human review ("proceed automatically", "no confirmation needed") |
 | JBK-005 | High | Evidence-erasure or cover-tracks instruction ("delete logs", "leave no trace") |
 | JBK-006 | High | Policy-legitimacy framing combined with an unsafe action request ("as a penetration tester, escalate privileges") |
+| JBK-007 | High | Model identity spoofing — claims to be a different AI model combined with a safety-bypass directive |
+| JBK-008 | High | Prompt compression attack — instruction to compress or summarise the system prompt |
+| JBK-009 | High | Nested instruction injection — imperative commands wrapped in a "safe/harmless summary/translation" framing |
 
 ### D. Unsafe Tool Use (TOOL)
 
@@ -287,7 +348,7 @@ Covers trust-boundary violations specific to vision, audio/video, and OCR pipeli
 | VIS-003 | High | Audio/video transcription output (Whisper, AssemblyAI, Deepgram, etc.) fed directly into prompt messages without sanitization — RAG poisoning via audio source |
 | VIS-004 | High | OCR output (Tesseract, Google Vision) interpolated into a `role: "system"` message or system prompt variable |
 
-### Skills Marketplace — `SKL` (7 rules) — v1.1
+### J. Skills Marketplace (SKL) — v1.1
 
 Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` directories. Fires on self-authoring attacks, remote skill loading, injected instructions, unsafe command dispatch, sensitive path access, privilege escalation claims, and hardcoded credentials in YAML frontmatter.
 
@@ -308,6 +369,17 @@ Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` direct
 | SKL-013 | High | Autonomous financial transactions — skill executes crypto transactions or holds private keys without per-transaction user confirmation |
 
 > **Scanning OpenClaw skills:** Run `npx hound scan --dir ./skills` or add `**/skills/**/*.md` and `**/SKILL.md` to your `include` config. ContextHound automatically emits skill files as `code-block` for multi-line rule analysis.
+
+### K. Agentic (AGT) — v1.3
+
+Targets risks specific to multi-step agentic systems: unbounded execution loops, unvalidated memory writes, and user input leaking into agent planning.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| AGT-001 | Critical | Tool call parameter receives system-prompt content — `tool_call`/`function_call` argument value containing `system:` or `instructions:` field contents |
+| AGT-002 | High | Agent loop with no iteration or timeout guard — no `max_iterations`, `max_steps`, `max_turns`, `timeout`, or `recursion_limit` in agent config or code |
+| AGT-003 | High | Agent memory written from unvalidated LLM output — `memory.save()`, `memory.add()`, or `vectorstore.upsert()` called with a raw model response variable |
+| AGT-004 | High | Plan injection — user input interpolated directly into agent planning, task, or goal prompt without a trust-boundary wrapper |
 
 ---
 
@@ -352,12 +424,12 @@ src/
 ├── types.ts                # Shared TypeScript types
 ├── config/
 │   ├── defaults.ts         # Default include/exclude globs and settings
-│   └── loader.ts           # .contexthoundrc.json loader
+│   └── loader.ts           # .contexthoundrc.json loader + env var overrides
 ├── scanner/
 │   ├── discover.ts         # File discovery via fast-glob
 │   ├── extractor.ts        # Prompt extraction (raw, code, structured)
 │   ├── languages.ts        # LLM API trigger patterns per language extension
-│   └── pipeline.ts         # Orchestrates the full scan
+│   └── pipeline.ts         # Orchestrates the full scan; .houndignore support
 ├── rules/
 │   ├── types.ts            # Rule interface and scoring helpers
 │   ├── injection.ts        # INJ-* rules
@@ -369,20 +441,29 @@ src/
 │   ├── encoding.ts         # ENC-* rules
 │   ├── outputHandling.ts   # OUT-* rules
 │   ├── multimodal.ts       # VIS-* rules
+│   ├── skills.ts           # SKL-* rules
+│   ├── agentic.ts          # AGT-* rules
 │   ├── mitigation.ts       # Mitigation presence detection
 │   └── index.ts            # Rule registry
 ├── scoring/
-│   └── index.ts            # Risk score calculation
+│   └── index.ts            # Risk score calculation and rule filtering
 └── report/
     ├── console.ts          # ANSI-coloured terminal output
     ├── json.ts             # JSON report builder
-    └── sarif.ts            # SARIF 2.1.0 report builder
+    ├── sarif.ts            # SARIF 2.1.0 report builder
+    ├── githubAnnotations.ts# GitHub Actions annotation formatter
+    ├── markdown.ts         # Markdown report with findings tables
+    └── jsonl.ts            # JSONL streaming formatter
 attacks/                    # Example injection strings (not executed against models)
 tests/
 ├── fixtures/               # Sample prompts for testing
 ├── rules.test.ts           # Unit tests for all rules
 ├── scoring.test.ts         # Unit tests for scoring logic
-└── scanner.test.ts         # Integration tests for the scan pipeline
+├── scanner.test.ts         # Integration tests for the scan pipeline
+├── extractor.test.ts       # Unit tests for prompt extraction
+├── formatters.test.ts      # Unit tests for all report formatters
+├── mitigation.test.ts      # Unit tests for mitigation detection
+└── cli.test.ts             # CLI integration tests (init, list-rules, exit codes)
 .github/
 ├── action.yml              # Reusable composite GitHub Action
 └── workflows/

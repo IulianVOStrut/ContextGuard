@@ -1,6 +1,6 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type Confidence = 'low' | 'medium' | 'high';
-export type OutputFormat = 'console' | 'json' | 'sarif';
+export type OutputFormat = 'console' | 'json' | 'sarif' | 'github-annotations' | 'markdown' | 'jsonl';
 export type FailOn = 'critical' | 'high' | 'medium';
 
 export interface Finding {
@@ -29,6 +29,7 @@ export interface ScanResult {
   allFindings: Finding[];
   threshold: number;
   passed: boolean;
+  fileThresholdBreached?: boolean;
 }
 
 export interface AuditConfig {
@@ -40,4 +41,8 @@ export interface AuditConfig {
   maxFindings?: number;
   failOn?: FailOn;
   verbose: boolean;
+  excludeRules?: string[];
+  includeRules?: string[];
+  minConfidence?: Confidence;
+  failFileThreshold?: number;
 }

@@ -1,4 +1,4 @@
-import type { Finding, FileResult, ScanResult, Severity, AuditConfig } from '../types.js';
+import type { Finding, FileResult, ScanResult, Severity, AuditConfig, Confidence } from '../types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 import { allRules, ruleToFinding, scoreMitigations } from '../rules/index.js';
 
@@ -9,18 +9,34 @@ export function scoreLabel(score: number): 'low' | 'medium' | 'high' | 'critical
   return 'critical';
 }
 
+function matchesFilter(id: string, pattern: string): boolean {
+  return pattern.endsWith('*')
+    ? id.startsWith(pattern.slice(0, -1))
+    : id === pattern;
+}
+
 export function analyzePrompt(
   prompts: ExtractedPrompt[],
-  filePath: string
+  filePath: string,
+  config?: Pick<AuditConfig, 'excludeRules' | 'includeRules' | 'minConfidence'>
 ): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
+  const confidenceOrder: Confidence[] = ['low', 'medium', 'high'];
 
   for (const prompt of prompts) {
     // Get mitigations for this prompt
     const mitigation = scoreMitigations(prompt);
 
     for (const rule of allRules) {
+      // Apply rule filters
+      if (config?.excludeRules?.some(p => matchesFilter(rule.id, p))) continue;
+      if (config?.includeRules?.length &&
+          !config.includeRules.some(p => matchesFilter(rule.id, p))) continue;
+      if (config?.minConfidence) {
+        if (confidenceOrder.indexOf(rule.confidence) < confidenceOrder.indexOf(config.minConfidence)) continue;
+      }
+
       const matches = rule.check(prompt, filePath);
       for (const match of matches) {
         const key = `${rule.id}:${filePath}:${match.lineStart}`;
@@ -65,6 +81,11 @@ export function buildScanResult(
   if (config.failOn === 'high' && hasHighOrAbove) passed = false;
   if (config.failOn === 'medium' && hasMediumOrAbove) passed = false;
 
+  const fileThresholdBreached = config.failFileThreshold != null &&
+    fileResults.some(f => f.fileScore >= config.failFileThreshold!);
+
+  if (fileThresholdBreached) passed = false;
+
   return {
     repoScore,
     scoreLabel: scoreLabel(repoScore),
@@ -72,5 +93,6 @@ export function buildScanResult(
     allFindings,
     threshold: config.threshold,
     passed,
+    fileThresholdBreached,
   };
 }

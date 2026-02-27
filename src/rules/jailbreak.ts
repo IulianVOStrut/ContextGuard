@@ -110,4 +110,50 @@ export const jailbreakRules: Rule[] = [
       return matchPattern(prompt, legitimacyPattern);
     },
   },
+  {
+    id: 'JBK-007',
+    title: 'Model identity spoofing combined with safety bypass',
+    severity: 'high',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove instructions that claim the model is a different AI system (GPT-4, Gemini, etc.) combined with directives to ignore guidelines or safety training. Model identity cannot be changed via prompt.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const identityPattern =
+        /(?:you are (?:GPT|gpt)-?[3-9]|you are Gemini|you are (?:Llama|llama)|you are a different (?:AI|model)|you are not Claude|you are not an? AI)/i;
+      const bypassPattern =
+        /(?:ignore (?:your )?(?:guidelines|training|safety|restrictions?)|disregard (?:your )?(?:safety|guidelines|training)|without (?:safety|guidelines|restrictions?))/i;
+
+      if (!identityPattern.test(prompt.text) || !bypassPattern.test(prompt.text)) return [];
+      return matchPattern(prompt, identityPattern);
+    },
+  },
+  {
+    id: 'JBK-008',
+    title: 'Prompt compression attack',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'jailbreak',
+    remediation:
+      'Do not accept instructions to compress, summarise, or shorten the system prompt. System instructions must be transmitted intact; compression requests are a social-engineering vector.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:compress|summarize|summarise|shorten|condense|abbreviate)\s+(?:the\s+)?(?:system\s+)?(?:prompt|instructions?|context|rules?)/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'JBK-009',
+    title: 'Nested instruction injection via safe-framing wrapper',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'jailbreak',
+    remediation:
+      'Treat any content wrapped in "safe/harmless summary/translation/example" framing as potentially injected instructions. Apply the same trust-boundary rules regardless of the declared framing.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /the following (?:is|are) (?:a |an )?(?:safe|harmless|benign)\s+(?:summary|translation|example|paraphrase|version)/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];

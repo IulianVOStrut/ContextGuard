@@ -7,42 +7,129 @@ import { runScan } from './scanner/pipeline.js';
 import { printConsoleReport } from './report/console.js';
 import { buildJsonReport } from './report/json.js';
 import { buildSarifReport } from './report/sarif.js';
-import type { AuditConfig, OutputFormat, FailOn } from './types.js';
+import { buildGithubAnnotationsReport } from './report/githubAnnotations.js';
+import { buildMarkdownReport } from './report/markdown.js';
+import { buildJsonlReport } from './report/jsonl.js';
+import { allRules } from './rules/index.js';
+import type { AuditConfig, OutputFormat, FailOn, Finding } from './types.js';
 
 const program = new Command();
 
 program
   .name('hound')
   .description('ContextHound: Scan LLM prompts for injection and security risks')
-  .version('1.0.0');
+  .version('1.3.0');
+
+// ── init command ─────────────────────────────────────────────────────────────
+
+program
+  .command('init')
+  .description('Scaffold a .contexthoundrc.json config file')
+  .option('--force', 'Overwrite existing config')
+  .action((opts: { force?: boolean }) => {
+    const outPath = path.join(process.cwd(), '.contexthoundrc.json');
+    if (fs.existsSync(outPath) && !opts.force) {
+      console.error('Error: .contexthoundrc.json already exists. Use --force to overwrite.');
+      process.exit(1);
+    }
+
+    const template = {
+      "_comment": "ContextHound configuration — https://github.com/IulianVOStrut/ContextHound",
+      "include": [
+        "**/*.prompt", "**/*.prompt.*", "**/*.md", "**/*.txt",
+        "**/*.yaml", "**/*.yml", "**/*.json",
+        "**/*.ts", "**/*.js", "**/*.py", "**/*.go",
+        "**/*.rs", "**/*.java", "**/*.kt", "**/*.cs",
+        "**/*.php", "**/*.rb", "**/*.swift", "**/*.vue",
+        "**/*.sh", "**/*.bash", "**/*.hs",
+      ],
+      "exclude": [
+        "**/node_modules/**", "**/dist/**", "**/build/**",
+        "**/.git/**", "**/coverage/**",
+        "**/*.min.js", "**/*.lock",
+        "**/package-lock.json", "**/yarn.lock", "**/pnpm-lock.yaml",
+        "**/src/rules/**",
+      ],
+      "threshold": 60,
+      "formats": ["console"],
+      "failOn": null,
+      "maxFindings": null,
+      "verbose": false,
+      "excludeRules": [],
+      "includeRules": [],
+      "minConfidence": null,
+      "failFileThreshold": null,
+    };
+
+    fs.writeFileSync(outPath, JSON.stringify(template, null, 2), 'utf8');
+    console.log('Created .contexthoundrc.json');
+    console.log('');
+    console.log('Next steps:');
+    console.log('  1. Edit .contexthoundrc.json to match your project layout');
+    console.log('  2. Run: hound scan --verbose');
+    console.log('  3. Set threshold and failOn to fit your risk tolerance');
+  });
+
+// ── scan command ─────────────────────────────────────────────────────────────
 
 program
   .command('scan', { isDefault: true })
   .description('Scan a repository for prompt-injection risks')
-  .option('-c, --config <path>', 'Path to .promptauditrc.json config file')
-  .option('-f, --format <formats>', 'Output formats: console,json,sarif (comma-separated)', 'console')
-  .option('-o, --out <path>', 'Output path for json/sarif files')
-  .option('-t, --threshold <n>', 'Risk score threshold (0-100). Fail if score >= threshold', '60')
+  .option('-c, --config <path>', 'Path to .contexthoundrc.json config file')
+  .option('-f, --format <formats>', 'Output formats: console,json,sarif,github-annotations,markdown,jsonl (comma-separated)', 'console')
+  .option('-o, --out <path>', 'Output path for json/sarif/markdown files')
+  .option('-t, --threshold <n>', 'Risk score threshold (0-100). Fail if score >= threshold')
   .option('--fail-on <level>', 'Fail on first finding of this severity: critical|high|medium')
   .option('--max-findings <n>', 'Stop after N findings')
+  .option('--fail-file-threshold <n>', 'Fail if any single file score >= N')
   .option('-v, --verbose', 'Verbose output (show remediation and confidence)')
   .option('--dir <path>', 'Directory to scan (default: current working directory)')
+  .option('--list-rules', 'Print all rules and exit')
+  .option('--watch', 'Re-scan on file changes')
   .action(async (opts: {
     config?: string;
     format: string;
     out?: string;
-    threshold: string;
+    threshold?: string;
     failOn?: string;
     maxFindings?: string;
+    failFileThreshold?: string;
     verbose?: boolean;
     dir?: string;
+    listRules?: boolean;
+    watch?: boolean;
   }) => {
+    // ── --list-rules ──────────────────────────────────────────────────────
+    if (opts.listRules) {
+      const formats = opts.format.split(',').map(f => f.trim());
+      if (formats.includes('json')) {
+        console.log(JSON.stringify(allRules.map(r => ({
+          id: r.id, severity: r.severity, confidence: r.confidence,
+          category: r.category, title: r.title,
+        })), null, 2));
+      } else {
+        const header = 'ID        SEV       CONF    CATEGORY          TITLE';
+        console.log(header);
+        console.log('-'.repeat(header.length));
+        for (const r of allRules) {
+          const id = r.id.padEnd(10);
+          const sev = r.severity.padEnd(10);
+          const conf = r.confidence.padEnd(8);
+          const cat = r.category.padEnd(18);
+          console.log(`${id}${sev}${conf}${cat}${r.title}`);
+        }
+        console.log('');
+        console.log(`Total: ${allRules.length} rules`);
+      }
+      process.exit(0);
+    }
+
     const cwd = opts.dir ? path.resolve(opts.dir) : process.cwd();
 
-    // Load config file
+    // Load config file (includes env var overrides)
     const fileConfig = loadConfig(opts.config, cwd);
 
-    // CLI options override config file
+    // CLI options override config file and env vars
     const formats = opts.format.split(',').map(f => f.trim()) as OutputFormat[];
 
     const config: AuditConfig = {
@@ -52,6 +139,9 @@ program
       out: opts.out ?? fileConfig.out,
       failOn: (opts.failOn as FailOn) ?? fileConfig.failOn,
       maxFindings: opts.maxFindings ? parseInt(opts.maxFindings, 10) : fileConfig.maxFindings,
+      failFileThreshold: opts.failFileThreshold
+        ? parseInt(opts.failFileThreshold, 10)
+        : fileConfig.failFileThreshold,
       verbose: opts.verbose ?? fileConfig.verbose,
     };
 
@@ -61,16 +151,30 @@ program
       console.log(`Formats: ${config.formats.join(', ')}`);
     }
 
-    let result;
-    try {
-      result = await runScan(cwd, config);
-    } catch (err) {
-      console.error('Error during scan:', err);
-      process.exit(2);
+    // ── --watch mode ──────────────────────────────────────────────────────
+    if (opts.watch) {
+      await runWatchMode(cwd, config, formats);
+      return;
     }
 
-    // Console report always prints
-    printConsoleReport(result, config.verbose);
+    // ── Single scan ───────────────────────────────────────────────────────
+    let result;
+    const jsonlLines: string[] = [];
+    const onFinding = formats.includes('jsonl')
+      ? (f: Finding) => { jsonlLines.push(JSON.stringify(f)); }
+      : undefined;
+
+    try {
+      result = await runScan(cwd, config, onFinding);
+    } catch (err) {
+      console.error('Error during scan:', err);
+      process.exit(1);
+    }
+
+    // Console report always prints (unless only jsonl/json/sarif requested)
+    if (formats.includes('console') || formats.length === 0) {
+      printConsoleReport(result, config.verbose);
+    }
 
     // JSON report
     if (formats.includes('json')) {
@@ -90,7 +194,115 @@ program
       console.log(`SARIF report written to: ${outPath}`);
     }
 
-    process.exit(result.passed ? 0 : 1);
+    // GitHub Annotations formatter
+    if (formats.includes('github-annotations')) {
+      const annotations = buildGithubAnnotationsReport(result);
+      if (annotations) console.log(annotations);
+    }
+
+    // Markdown report
+    if (formats.includes('markdown')) {
+      const md = buildMarkdownReport(result);
+      const outPath = config.out
+        ? (config.out.endsWith('.md') ? config.out : `${config.out}.md`)
+        : path.join(cwd, 'hound-report.md');
+      fs.writeFileSync(outPath, md, 'utf8');
+      console.log(`Markdown report written to: ${outPath}`);
+    }
+
+    // JSONL report (findings already streamed; write to file if --out set)
+    if (formats.includes('jsonl')) {
+      const jsonlOutput = jsonlLines.join('\n');
+      if (config.out) {
+        const outPath = config.out.endsWith('.jsonl') ? config.out : `${config.out}.jsonl`;
+        fs.writeFileSync(outPath, jsonlOutput, 'utf8');
+        console.log(`JSONL report written to: ${outPath}`);
+      } else {
+        // Stream to stdout
+        if (jsonlLines.length > 0) console.log(jsonlOutput);
+      }
+    }
+
+    // Exit codes:
+    // 0 = passed
+    // 1 = unhandled error (handled above with catch)
+    // 2 = threshold breached (score >= threshold)
+    // 3 = failOn violation
+    if (!result.passed) {
+      const thresholdFailed = result.repoScore >= config.threshold || result.fileThresholdBreached;
+      const failOnFailed = config.failOn != null && (() => {
+        const sev = config.failOn!;
+        if (sev === 'critical') return result.allFindings.some(f => f.severity === 'critical');
+        if (sev === 'high') return result.allFindings.some(f => f.severity === 'high' || f.severity === 'critical');
+        if (sev === 'medium') return result.allFindings.some(f => f.severity !== 'low');
+        return false;
+      })();
+
+      if (failOnFailed) process.exit(3);
+      if (thresholdFailed) process.exit(2);
+      process.exit(2); // fallback
+    }
+    process.exit(0);
   });
+
+// ── watch mode implementation ─────────────────────────────────────────────────
+
+async function runWatchMode(cwd: string, config: AuditConfig, formats: OutputFormat[]): Promise<void> {
+  const chokidar = await import('chokidar');
+
+  // Initial full scan
+  let result = await runScan(cwd, config);
+  printConsoleReport(result, config.verbose);
+
+  // Track findings by file for delta detection
+  const prevFindings = new Map<string, string[]>();
+  for (const fr of result.files) {
+    prevFindings.set(fr.file, fr.findings.map(f => `${f.id}:${f.lineStart}`));
+  }
+
+  console.log('\n[watching for changes… Ctrl+C to exit]\n');
+
+  const watcher = chokidar.watch(config.include.map(g => path.join(cwd, g)), {
+    cwd,
+    ignored: config.exclude,
+    ignoreInitial: true,
+    persistent: true,
+  });
+
+  const handleChange = async (filePath: string) => {
+    const absPath = path.isAbsolute(filePath) ? filePath : path.join(cwd, filePath);
+    console.log(`\n[changed] ${absPath}`);
+
+    try {
+      result = await runScan(cwd, config);
+      printConsoleReport(result, config.verbose);
+
+      // Show delta for changed file
+      const newFr = result.files.find(f => f.file === absPath);
+      const newKeys = newFr ? newFr.findings.map(f => `${f.id}:${f.lineStart}`) : [];
+      const oldKeys = prevFindings.get(absPath) ?? [];
+      const added = newKeys.filter(k => !oldKeys.includes(k));
+      const removed = oldKeys.filter(k => !newKeys.includes(k));
+      if (added.length > 0) console.log(`  +${added.length} new finding(s)`);
+      if (removed.length > 0) console.log(`  -${removed.length} resolved finding(s)`);
+      prevFindings.set(absPath, newKeys);
+    } catch (err) {
+      console.error('Error during re-scan:', err);
+    }
+
+    console.log('\n[watching for changes… Ctrl+C to exit]\n');
+  };
+
+  watcher.on('change', handleChange);
+  watcher.on('add', handleChange);
+
+  // Keep process alive
+  process.on('SIGINT', async () => {
+    await watcher.close();
+    process.exit(0);
+  });
+
+  void formats; // suppress unused warning
+}
 
 program.parse(process.argv);
