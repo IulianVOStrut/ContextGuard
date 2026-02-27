@@ -41,11 +41,15 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 | **68 security rules** | Across 11 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
-| **6 output formats** | Console, JSON, SARIF, GitHub Annotations, Markdown, and JSONL streaming |
+| **7 output formats** | Console, JSON, SARIF, GitHub Annotations, Markdown, JSONL streaming, and interactive HTML |
 | **GitHub Action included** | Fails CI on high risk and uploads SARIF results automatically |
 | **Multi-language scanning** | Detects LLM API usage in Python, Go, Rust, Java, C#, PHP, Ruby, Swift, Kotlin, Vue, Bash — not just TypeScript/JavaScript |
 | **Rule filtering** | `excludeRules`/`includeRules` with prefix-glob syntax (`CMD-*`); `minConfidence` filter |
+| **Incremental cache** | `.hound-cache.json` skips unchanged files on re-runs; `--no-cache` to disable |
+| **Plugin system** | Load custom rules from local `.js` files via `"plugins": ["./my-rule.js"]` in config |
+| **Baseline / diff mode** | `--baseline results.json` — only report and fail on findings not present in a prior scan |
 | **Watch mode** | `--watch` re-scans on file changes and shows delta findings |
+| **Parallel scanning** | Concurrent file processing (`--concurrency <n>`, default 8) |
 | **Fully offline** | No API calls, no telemetry, no paid dependencies |
 
 ---
@@ -100,8 +104,24 @@ hound scan --format jsonl | jq '.severity'
 # List all 68 rules
 hound scan --list-rules
 
+# Interactive HTML report (self-contained, open in browser)
+hound scan --format html --out report
+
 # Re-scan on file changes
 hound scan --watch
+
+# Parallel scanning (default is 8; tune for your machine)
+hound scan --concurrency 16
+
+# Disable incremental cache for a clean run
+hound scan --no-cache
+
+# Baseline mode — only report findings new since the last saved scan
+hound scan --format json --out baseline          # save a baseline
+hound scan --baseline baseline.json             # compare future scans against it
+
+# Load a custom rule from a local plugin file
+hound scan  # plugin declared in .contexthoundrc.json "plugins" field
 
 # Only run high-confidence rules
 hound scan --config .contexthoundrc.json  # set minConfidence: "high"
@@ -182,7 +202,11 @@ Run `hound init` to scaffold a `.contexthoundrc.json`, or create one manually:
   "excludeRules": ["JBK-002"],
   "includeRules": [],
   "minConfidence": "medium",
-  "failFileThreshold": 80
+  "failFileThreshold": 80,
+  "concurrency": 8,
+  "cache": true,
+  "plugins": ["./rules/my-custom-rule.js"],
+  "baseline": "./baseline.json"
 }
 ```
 
@@ -191,7 +215,7 @@ Run `hound init` to scaffold a `.contexthoundrc.json`, or create one manually:
 | `include` | `**/*.{ts,tsx,js,jsx,py,go,rs,java,kt,cs,php,rb,swift,vue,sh,bash,hs,md,txt,yaml,yml,json}` | Glob patterns to scan |
 | `exclude` | `**/node_modules/**`, `**/dist/**`, etc. | Glob patterns to ignore |
 | `threshold` | `60` | Fail if repo score is at or above this value (exit code 2) |
-| `formats` | `["console"]` | Output formats: `console`, `json`, `sarif`, `github-annotations`, `markdown`, `jsonl` |
+| `formats` | `["console"]` | Output formats: `console`, `json`, `sarif`, `github-annotations`, `markdown`, `jsonl`, `html` |
 | `out` | auto | Base path for file output |
 | `verbose` | `false` | Show remediations and confidence per finding |
 | `failOn` | unset | Exit code 3 on first finding of: `critical`, `high`, or `medium` |
@@ -200,6 +224,10 @@ Run `hound init` to scaffold a `.contexthoundrc.json`, or create one manually:
 | `includeRules` | `[]` | Run only these rule IDs (empty = run all) |
 | `minConfidence` | unset | Skip rules below this confidence: `low`, `medium`, or `high` |
 | `failFileThreshold` | unset | Fail (exit code 2) if any single file scores at or above this value |
+| `concurrency` | `8` | Max files processed in parallel |
+| `cache` | `true` | Enable incremental scan cache (`.hound-cache.json`); set `false` or use `--no-cache` to disable |
+| `plugins` | `[]` | Paths to local `.js` rule plugins; each must export a `Rule` or `Rule[]` |
+| `baseline` | unset | Path to a previous JSON report; only findings absent from the baseline are reported |
 
 ### Environment variable overrides
 
@@ -216,6 +244,49 @@ All key settings can be overridden at runtime without editing the config file:
 ### `.houndignore`
 
 Place a `.houndignore` file in your project root to add exclusion patterns without editing `.contexthoundrc.json`. Follows the same glob syntax; lines starting with `#` are comments.
+
+### Custom rule plugins
+
+Any `.js` file that exports a `Rule` or `Rule[]` can be loaded as a plugin:
+
+```js
+// my-rule.js
+module.exports = {
+  id: 'CUSTOM-001',
+  title: 'Proprietary data pattern in prompt',
+  severity: 'high',
+  confidence: 'high',
+  category: 'injection',
+  remediation: 'Remove internal identifiers from prompts.',
+  check(prompt) {
+    if (prompt.text.includes('INTERNAL_PATTERN')) {
+      return [{ evidence: 'INTERNAL_PATTERN', lineStart: 1, lineEnd: 1 }];
+    }
+    return [];
+  },
+};
+```
+
+Reference it in `.contexthoundrc.json`:
+```json
+{ "plugins": ["./my-rule.js"] }
+```
+
+Plugin rules are subject to the same `excludeRules`, `includeRules`, and `minConfidence` filters as built-in rules.
+
+### Baseline / diff mode
+
+Save a baseline after an initial scan, then only report findings that are new in subsequent scans:
+
+```bash
+# Save baseline
+hound scan --format json --out baseline
+
+# Future scans only report new issues
+hound scan --baseline baseline.json
+```
+
+Findings are matched by `ruleId + file` — line shifts don't cause false new-finding alerts.
 
 ---
 
@@ -429,7 +500,8 @@ src/
 │   ├── discover.ts         # File discovery via fast-glob
 │   ├── extractor.ts        # Prompt extraction (raw, code, structured)
 │   ├── languages.ts        # LLM API trigger patterns per language extension
-│   └── pipeline.ts         # Orchestrates the full scan; .houndignore support
+│   ├── cache.ts            # Incremental scan cache (.hound-cache.json)
+│   └── pipeline.ts         # Orchestrates the full scan; parallel + cache + plugins
 ├── rules/
 │   ├── types.ts            # Rule interface and scoring helpers
 │   ├── injection.ts        # INJ-* rules
@@ -453,7 +525,8 @@ src/
     ├── sarif.ts            # SARIF 2.1.0 report builder
     ├── githubAnnotations.ts# GitHub Actions annotation formatter
     ├── markdown.ts         # Markdown report with findings tables
-    └── jsonl.ts            # JSONL streaming formatter
+    ├── jsonl.ts            # JSONL streaming formatter
+    └── html.ts             # Self-contained interactive HTML report
 attacks/                    # Example injection strings (not executed against models)
 tests/
 ├── fixtures/               # Sample prompts for testing
