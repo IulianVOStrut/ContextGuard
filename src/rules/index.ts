@@ -8,6 +8,7 @@ import { ragRules } from './rag.js';
 import { encodingRules } from './encoding.js';
 import { outputHandlingRules } from './outputHandling.js';
 import { multimodalRules } from './multimodal.js';
+import { skillsRules } from './skills.js';
 
 export const allRules: Rule[] = [
   ...injectionRules,
@@ -19,9 +20,10 @@ export const allRules: Rule[] = [
   ...encodingRules,
   ...outputHandlingRules,
   ...multimodalRules,
+  ...skillsRules,
 ];
 
-export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules };
+export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules, skillsRules };
 export type { Rule, RuleMatch } from './types.js';
 export { calcRiskPoints, ruleToFinding } from './types.js';
 export { scoreMitigations } from './mitigation.js';

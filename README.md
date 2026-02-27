@@ -37,7 +37,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **48 security rules** | Across 9 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal |
+| **55 security rules** | Across 10 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -286,6 +286,22 @@ Covers trust-boundary violations specific to vision, audio/video, and OCR pipeli
 | VIS-002 | Critical | `fs.readFile`/`readFileSync` called with a user-controlled path in a file that also builds a vision API message — path traversal into multimodal input |
 | VIS-003 | High | Audio/video transcription output (Whisper, AssemblyAI, Deepgram, etc.) fed directly into prompt messages without sanitization — RAG poisoning via audio source |
 | VIS-004 | High | OCR output (Tesseract, Google Vision) interpolated into a `role: "system"` message or system prompt variable |
+
+### Skills Marketplace — `SKL` (7 rules) — v1.1
+
+Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` directories. Fires on self-authoring attacks, remote skill loading, injected instructions, unsafe command dispatch, sensitive path access, privilege escalation claims, and hardcoded credentials in YAML frontmatter.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| SKL-001 | Critical | Skill body instructs agent to write or modify other skill files — self-authoring attack that persists across agent restarts |
+| SKL-002 | Critical | Skill body instructs agent to fetch or load skills from an external URL — allows attacker to change skill behavior after installation |
+| SKL-003 | Critical | Skill body contains prompt injection phrases targeting agent core instructions (`ignore previous instructions`, `you are now unrestricted`, etc.) |
+| SKL-004 | High | Skill frontmatter uses `command-dispatch: tool` with `command-arg-mode: raw` — forwards raw user input to a tool, bypassing model safety reasoning |
+| SKL-005 | High | Skill body references sensitive filesystem paths (`~/.ssh`, `~/.env`, `/etc/passwd`, `../../`) for agent to read and potentially exfiltrate |
+| SKL-006 | High | Skill body claims elevated privileges or instructs agent to override or disable other installed skills |
+| SKL-007 | Critical | Hardcoded credential value (API key, token, password) found in YAML frontmatter — exposed to anyone who receives or installs the skill |
+
+> **Scanning OpenClaw skills:** Run `npx hound scan --dir ./skills` or add `**/skills/**/*.md` and `**/SKILL.md` to your `include` config. ContextHound automatically emits skill files as `code-block` for multi-line rule analysis.
 
 ---
 

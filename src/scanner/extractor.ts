@@ -56,7 +56,21 @@ export function extractPrompts(filePath: string): ExtractedPrompt[] {
   }
 
   if (isRawPromptFile(filePath)) {
-    return extractFromRaw(content);
+    const rawResults = extractFromRaw(content);
+    // OpenClaw skill files: also emit the full file as code-block so multi-line
+    // SKL rules (SKL-004 whole-file frontmatter checks, etc.) fire correctly.
+    const base = path.basename(filePath).toLowerCase();
+    const norm = filePath.replace(/\\/g, '/').toLowerCase();
+    const isSkillMd =
+      base === 'skill.md' ||
+      norm.includes('/skills/') ||
+      norm.includes('.openclaw') ||
+      norm.includes('clawhub');
+    if (isSkillMd) {
+      const lines = content.split('\n');
+      rawResults.push({ text: content, lineStart: 1, lineEnd: lines.length, kind: 'code-block' });
+    }
+    return rawResults;
   }
 
   if (filePath.endsWith('.json') || filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
