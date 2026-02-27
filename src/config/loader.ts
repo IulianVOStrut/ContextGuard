@@ -16,6 +16,7 @@ interface RcFile {
   includeRules?: string[];
   minConfidence?: string;
   failFileThreshold?: number;
+  concurrency?: number;
 }
 
 export function loadConfig(configPath?: string, cwd: string = process.cwd()): AuditConfig {
@@ -49,6 +50,7 @@ export function loadConfig(configPath?: string, cwd: string = process.cwd()): Au
     includeRules: rc.includeRules,
     minConfidence: rc.minConfidence as Confidence,
     failFileThreshold: rc.failFileThreshold,
+    concurrency: rc.concurrency,
   };
 
   // Apply environment variable overrides (priority: CLI > env > config > default)

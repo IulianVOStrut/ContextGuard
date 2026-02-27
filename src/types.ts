@@ -45,4 +45,5 @@ export interface AuditConfig {
   includeRules?: string[];
   minConfidence?: Confidence;
   failFileThreshold?: number;
+  concurrency?: number;
 }

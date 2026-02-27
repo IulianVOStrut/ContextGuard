@@ -14,6 +14,31 @@ async function loadHoundIgnore(cwd: string): Promise<string[]> {
     .filter(l => l && !l.startsWith('#'));
 }
 
+// Inline concurrency limiter — avoids p-limit (ESM-only, incompatible with CommonJS)
+function createLimiter(concurrency: number) {
+  let active = 0;
+  const queue: Array<() => void> = [];
+
+  function next() {
+    while (queue.length > 0 && active < concurrency) {
+      active++;
+      queue.shift()!();
+    }
+  }
+
+  return function limit<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      queue.push(() => {
+        fn().then(resolve, reject).finally(() => {
+          active--;
+          next();
+        });
+      });
+      next();
+    });
+  };
+}
+
 export async function runScan(
   cwd: string,
   config: AuditConfig,
@@ -27,26 +52,43 @@ export async function runScan(
 
   const files = await discoverFiles(cwd, config);
 
+  const concurrency = config.concurrency ?? 8;
+  const limit = createLimiter(concurrency);
+
   const fileResults: FileResult[] = [];
   let totalFindings = 0;
+  let aborted = false;
 
-  for (const file of files) {
-    const prompts = extractPrompts(file);
-    if (prompts.length === 0) continue;
+  const tasks = files.map(file =>
+    limit(async () => {
+      if (aborted) return;
 
-    const findings = analyzePrompt(prompts, file, config);
-    if (findings.length === 0) continue;
+      const prompts = extractPrompts(file);
+      if (prompts.length === 0) return;
 
-    if (onFinding) {
-      for (const f of findings) onFinding(f);
-    }
+      const findings = analyzePrompt(prompts, file, config);
+      if (findings.length === 0) return;
 
-    const fileScore = scoreFile(findings);
-    fileResults.push({ file, findings, fileScore });
+      if (aborted) return; // recheck after CPU work
 
-    totalFindings += findings.length;
-    if (config.maxFindings && totalFindings >= config.maxFindings) break;
-  }
+      if (onFinding) {
+        for (const f of findings) onFinding(f);
+      }
+
+      const fileScore = scoreFile(findings);
+      fileResults.push({ file, findings, fileScore });
+
+      totalFindings += findings.length;
+      if (config.maxFindings && totalFindings >= config.maxFindings) {
+        aborted = true;
+      }
+    })
+  );
+
+  await Promise.all(tasks);
+
+  // Sort by file path for deterministic, diffable output
+  fileResults.sort((a, b) => a.file.localeCompare(b.file));
 
   return buildScanResult(fileResults, config);
 }

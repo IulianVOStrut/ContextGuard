@@ -86,6 +86,7 @@ program
   .option('--dir <path>', 'Directory to scan (default: current working directory)')
   .option('--list-rules', 'Print all rules and exit')
   .option('--watch', 'Re-scan on file changes')
+  .option('--concurrency <n>', 'Max files scanned in parallel (default: 8)')
   .action(async (opts: {
     config?: string;
     format: string;
@@ -98,6 +99,7 @@ program
     dir?: string;
     listRules?: boolean;
     watch?: boolean;
+    concurrency?: string;
   }) => {
     // ── --list-rules ──────────────────────────────────────────────────────
     if (opts.listRules) {
@@ -143,6 +145,7 @@ program
         ? parseInt(opts.failFileThreshold, 10)
         : fileConfig.failFileThreshold,
       verbose: opts.verbose ?? fileConfig.verbose,
+      concurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : fileConfig.concurrency,
     };
 
     if (config.verbose) {
