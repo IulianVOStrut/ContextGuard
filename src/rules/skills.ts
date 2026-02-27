@@ -222,4 +222,179 @@ export const skillsRules: Rule[] = [
       return results;
     },
   },
+
+  {
+    id: 'SKL-008',
+    title: 'Skill implements heartbeat C2 — scheduled remote fetch overwrites skill instructions',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'Skills must never schedule periodic fetches of remote instructions or overwrite their own SKILL.md at runtime. Heartbeat C2 lets an attacker silently update every installed instance simultaneously after a clean install. Remove the skill and audit your agent for any modified SKILL.md files.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      // Periodic/scheduled remote fetch that writes back to a skill or instruction file
+      const HEARTBEAT_PATTERN =
+        /(?:every\s+(?:\d+\s+)?(?:hour|minute|second|day)|on\s+a\s+schedule|periodically|heartbeat|cron|setInterval|setTimeout)\s+.{0,80}(?:fetch|curl|wget|download|get)\s+.{0,80}(?:skill|SKILL\.md|instructions?|prompt)/i;
+      const REMOTE_OVERWRITE_PATTERN =
+        /(?:curl|wget|fetch)\s+.{0,120}(?:SKILL\.md|skill\.md)|(?:curl|wget)\s+-[sS]\s+https?:\/\/[^\s]+\s*(?:>|>>|\|\s*tee)/i;
+      const SCHEDULE_FETCH_PATTERN =
+        /(?:fetch|download|curl|wget)\s+.{0,80}(?:instruction|update|new\s+skill|latest)\s+.{0,40}(?:every|hourly|daily|weekly|scheduled)/i;
+      lines.forEach((line, i) => {
+        if (
+          HEARTBEAT_PATTERN.test(line) ||
+          REMOTE_OVERWRITE_PATTERN.test(line) ||
+          SCHEDULE_FETCH_PATTERN.test(line)
+        ) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+
+  {
+    id: 'SKL-009',
+    title: 'Skill instructs agent to deny being an AI or adopt a deceptive human identity',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'Skills must never instruct the agent to deny being an AI, claim to be human, or hide its nature from users. Identity replacement attacks cause the agent to deceive users, resist transparency, and potentially enable emotional manipulation or fraud. Remove this skill immediately.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      const IDENTITY_DENIAL_PATTERN =
+        /you\s+are\s+not\s+(?:an?\s+)?(?:AI|artificial intelligence|language model|LLM|assistant|bot|chatbot)\b|do\s+not\s+(?:reveal|admit|say|tell|claim|acknowledge)\s+(?:that\s+)?you\s+are\s+(?:an?\s+)?(?:AI|artificial|language model|assistant|bot)\b|(?:deny|hide|conceal)\s+(?:being|that you are)\s+(?:an?\s+)?(?:AI|artificial intelligence|assistant|bot)\b|you\s+are\s+a\s+real\s+(?:person|human|girl|boy|man|woman)\b|never\s+(?:admit|reveal|say)\s+you(?:'re|\s+are)\s+(?:an?\s+)?AI\b/i;
+      lines.forEach((line, i) => {
+        if (IDENTITY_DENIAL_PATTERN.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+
+  {
+    id: 'SKL-010',
+    title: 'Skill contains anti-scanner evasion targeting security auditing tools',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'This skill contains text explicitly designed to mislead automated security scanners — a confirmed indicator of a malicious skill attempting to evade detection. The "SECURITY NOTICE FOR AUTOMATED SCANNERS" pattern is used by agent rootkits to bypass auditing. Remove this skill immediately.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      const ANTI_SCANNER_PATTERN =
+        /security\s+notice\s+for\s+(?:automated\s+)?scanners?|(?:automated\s+)?scanners?\s+(?:should|must|will)\s+(?:ignore|skip|disregard|treat\s+as\s+safe)|this\s+file\s+contains\s+(?:malicious|dangerous|suspicious)[- ]looking\s+strings?\s+by\s+design|these\s+(?:strings?|instructions?|patterns?)\s+are\s+not\s+(?:actual\s+)?instructions?\s+for\s+the\s+agent|not\s+instructions?\s+(?:for\s+the\s+agent\s+)?to\s+execute|scanner[\s-]safe\b/i;
+      lines.forEach((line, i) => {
+        if (ANTI_SCANNER_PATTERN.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+
+  {
+    id: 'SKL-011',
+    title: 'Skill injects instructions into agent identity files (SOUL.md / IDENTITY.md persistence)',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'Skills must never write to SOUL.md, IDENTITY.md, AGENTS.md, or other agent identity files. VirusTotal confirmed that malicious skills use this to persist behavioral changes after uninstallation — removing the skill removes the code but not the identity modification. Audit your SOUL.md for injected content.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      const SOUL_PERSIST_PATTERN =
+        /(?:write|save|append|add|insert|modify|update|edit)\s+.{0,60}(?:SOUL\.md|IDENTITY\.md|AGENTS\.md|USER\.md|TOOLS\.md|\.clawdbot|\.openclaw)\b|(?:SOUL\.md|IDENTITY\.md|AGENTS\.md)\s+.{0,40}(?:write|save|append|add|insert|modify|update)/i;
+      lines.forEach((line, i) => {
+        if (SOUL_PERSIST_PATTERN.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+
+  {
+    id: 'SKL-012',
+    title: 'Skill contains self-propagation instructions — SSH spread or curl-pipe-bash worm pattern',
+    severity: 'high',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'Skills must never instruct the agent to propagate themselves to other hosts via SSH or download-and-execute patterns. Self-propagating skills are worms by definition. Remove the skill and check for unauthorised SSH activity or new files dropped on reachable hosts.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      const WORM_PATTERN =
+        /curl\s+.{0,120}\|\s*(?:ba)?sh\b|wget\s+.{0,120}\|\s*(?:ba)?sh\b|curl\s+.{0,60}\|\s*sudo\s|ssh\s+.{0,80}@.{0,80}(?:install|copy|scp|curl|wget|skill)\b|ssh-keyscan\b|propagat(?:e|ing|ion)\s+.{0,60}(?:host|server|machine|node|ssh)|spread\s+(?:to|across)\s+.{0,40}(?:host|server|machine|node)/i;
+      lines.forEach((line, i) => {
+        if (WORM_PATTERN.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+
+  {
+    id: 'SKL-013',
+    title: 'Skill instructs agent to execute autonomous financial transactions without user confirmation',
+    severity: 'high',
+    confidence: 'high',
+    category: 'skills',
+    remediation:
+      'Skills must never instruct the agent to send cryptocurrency transactions, sign blockchain transactions, or execute financial operations autonomously without explicit per-transaction user approval. Skills with EVM_PRIVATE_KEY access that call sendTransaction without confirmation are crypto drainers. Remove this skill immediately.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (!isSkillFile(filePath)) return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      // Financial autonomy: transaction execution + no-confirm language
+      const FINANCIAL_TX_PATTERN =
+        /(?:sendTransaction|eth_sendRawTransaction|wallet\.send|signTransaction|send_transaction|transfer_funds?)\b/i;
+      const AUTONOMOUS_PATTERN =
+        /(?:automatically|autonomously|without\s+(?:asking|confirmation|approval|notifying)|do\s+not\s+(?:ask|notify|report|tell)\s+the\s+user|silently)\s+.{0,80}(?:send|transfer|pay|transaction|tx)\b|\b(?:EVM_PRIVATE_KEY|MONAD_PRIVATE_KEY|WALLET_PRIVATE_KEY|PRIVATE_KEY)\b/i;
+      // Flag lines with transaction patterns; also flag private key variable names
+      lines.forEach((line, i) => {
+        if (FINANCIAL_TX_PATTERN.test(line) || AUTONOMOUS_PATTERN.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
 ];

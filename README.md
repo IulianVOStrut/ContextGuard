@@ -37,7 +37,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **55 security rules** | Across 10 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace |
+| \*\*61 security rules\*\* | Across 10 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **3 output formats** | Human-readable console, JSON, and SARIF for GitHub Code Scanning |
@@ -300,6 +300,12 @@ Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` direct
 | SKL-005 | High | Skill body references sensitive filesystem paths (`~/.ssh`, `~/.env`, `/etc/passwd`, `../../`) for agent to read and potentially exfiltrate |
 | SKL-006 | High | Skill body claims elevated privileges or instructs agent to override or disable other installed skills |
 | SKL-007 | Critical | Hardcoded credential value (API key, token, password) found in YAML frontmatter — exposed to anyone who receives or installs the skill |
+| SKL-008 | Critical | Heartbeat C2 — skill schedules periodic remote fetch to silently overwrite its own instructions after a clean install |
+| SKL-009 | Critical | Agent identity denial — skill instructs agent to deny being AI, claim to be human, or adopt a deceptive persona |
+| SKL-010 | Critical | Anti-scanner evasion — skill contains text explicitly designed to mislead security auditing tools |
+| SKL-011 | Critical | SOUL.md / IDENTITY.md persistence — skill writes instructions to agent identity files that survive uninstallation |
+| SKL-012 | High | Self-propagating worm — skill instructs agent to spread via SSH or `curl\|bash` to reachable hosts |
+| SKL-013 | High | Autonomous financial transactions — skill executes crypto transactions or holds private keys without per-transaction user confirmation |
 
 > **Scanning OpenClaw skills:** Run `npx hound scan --dir ./skills` or add `**/skills/**/*.md` and `**/SKILL.md` to your `include` config. ContextHound automatically emits skill files as `code-block` for multi-line rule analysis.
 
