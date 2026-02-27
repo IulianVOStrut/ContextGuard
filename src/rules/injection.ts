@@ -1,3 +1,4 @@
+import path from 'path';
 import type { Rule, RuleMatch } from './types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 
@@ -24,12 +25,40 @@ export const injectionRules: Rule[] = [
     confidence: 'medium',
     category: 'injection',
     remediation: 'Wrap user input with clear delimiters (e.g., triple backticks) and label it as "untrusted user content".',
-    check(prompt: ExtractedPrompt): RuleMatch[] {
-      // Looks for ${userInput}, ${input}, ${query}, ${message} etc. without surrounding delimiters
-      const pattern = /\$\{(?:user(?:Input|Message|Query|Content|Text|Prompt)|input|query|message|request|text|prompt|content)\}/i;
-      const results = matchPattern(prompt, pattern);
-      // Check if there's a delimiter nearby
-      return results.filter(r => {
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      const ext = path.extname(filePath).toLowerCase();
+      const USER_VARS = '(?:user(?:Input|Message|Query|Content|Text|Prompt|_input|_message|_query|_text|_prompt)|input|query|message|request|text|prompt|content)';
+
+      // JS/TS template literal: ${userInput}
+      const jsPattern = new RegExp(`\\$\\{${USER_VARS}\\}`, 'i');
+      // Python f-string: f"...{user_input}..."
+      const pyPattern = new RegExp(`\\bf['"].*\\{${USER_VARS}\\}`, 'i');
+      // C# interpolated string: $"...{UserInput}..."
+      const csPattern = new RegExp(`\\$['"].*\\{${USER_VARS}\\}`, 'i');
+      // Ruby string interpolation: "...#{variable}..."
+      const rbPattern = new RegExp(`#\\{${USER_VARS}\\}`, 'i');
+      // Swift string interpolation: "...\(variable)..."
+      const swPattern = new RegExp(`\\\\\\(${USER_VARS}\\)`, 'i');
+
+      const patterns: RegExp[] = [jsPattern];
+      if (ext === '.py')    patterns.push(pyPattern);
+      if (ext === '.cs')    patterns.push(csPattern);
+      if (ext === '.rb')    patterns.push(rbPattern);
+      if (ext === '.swift') patterns.push(swPattern);
+
+      const seen = new Set<number>();
+      const allResults: RuleMatch[] = [];
+      for (const pat of patterns) {
+        for (const r of matchPattern(prompt, pat)) {
+          if (!seen.has(r.lineStart)) {
+            seen.add(r.lineStart);
+            allResults.push(r);
+          }
+        }
+      }
+
+      // Filter out matches where a delimiter is present nearby
+      return allResults.filter(r => {
         const context = prompt.text.slice(
           Math.max(0, prompt.text.indexOf(r.evidence) - 100),
           prompt.text.indexOf(r.evidence) + 100
@@ -67,7 +96,11 @@ export const injectionRules: Rule[] = [
     category: 'injection',
     remediation: 'Wrap RAG/retrieved context with clear separators and label it "untrusted external content".',
     check(prompt: ExtractedPrompt): RuleMatch[] {
-      const hasRagContext = /\$\{(?:context|documents?|chunks?|retrieved\w*|rag\w*|sources?|passages?)\}/i.test(prompt.text);
+      // JS/TS template literal: ${context}, ${documents}, etc.
+      const hasJsRagContext = /\$\{(?:context|documents?|chunks?|retrieved\w*|rag\w*|sources?|passages?)\}/i.test(prompt.text);
+      // Python f-string: f"...{context}...", f"...{documents}..."
+      const hasPyRagContext = /\bf['"].*\{(?:context|documents?|chunks?|retrieved\w*|rag\w*|sources?)\}/i.test(prompt.text);
+      const hasRagContext = hasJsRagContext || hasPyRagContext;
       const hasSeparator = /(?:untrusted|external content|retrieved content|<context>|<document>|\[CONTEXT\]|---)/i.test(prompt.text);
       if (hasRagContext && !hasSeparator) {
         return [{

@@ -925,3 +925,217 @@ describe('INJ-011: Browser DOM or URL source fed into LLM call', () => {
     expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
   });
 });
+
+// ── Multi-language support ────────────────────────────────────────────────────
+
+describe('INJ-001: Python f-string user input concatenation', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-001')!;
+
+  it('flags bare {user_input} in a Python f-string', () => {
+    const prompt = makePrompt('answer = f"Answer: {user_input}"');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag Python f-string when wrapped in <USER> delimiter', () => {
+    const prompt = makePrompt('answer = f"<USER>{user_input}</USER>"');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+
+  it('does not fire py pattern on a .ts file', () => {
+    // The py pattern should not fire for .ts; only the JS ${} pattern does
+    const prompt = makePrompt('answer = f"Answer: {user_input}"');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+});
+
+describe('INJ-001: C# interpolated string user input', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-001')!;
+
+  it('flags {userMessage} in a C# interpolated string', () => {
+    const prompt = makePrompt('var p = $"Answer: {userMessage}";');
+    expect(rule.check(prompt, 'test.cs')).toHaveLength(1);
+  });
+
+  it('does not flag C# interpolated string with <USER> delimiter', () => {
+    const prompt = makePrompt('var p = $"<USER>{userMessage}</USER>";');
+    expect(rule.check(prompt, 'test.cs')).toHaveLength(0);
+  });
+});
+
+describe('INJ-003: Python f-string RAG context without separator', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-003')!;
+
+  it('flags {retrieved_docs} in a Python f-string without separator', () => {
+    const prompt = makePrompt('p = f"Context: {retrieved_docs}\\nAnswer:"');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag Python f-string RAG context when labeled untrusted', () => {
+    const prompt = makePrompt('p = f"Untrusted external content: {retrieved_docs}"');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+});
+
+describe('CMD-001: Python subprocess with f-string variable', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-001')!;
+
+  it('flags subprocess.run with f-string containing a variable', () => {
+    const prompt = makePrompt('subprocess.run(f"ls {filepath}", shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag subprocess.run with a static string argument', () => {
+    const prompt = makePrompt('subprocess.run("ls -la", shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+});
+
+describe('CMD-001: PHP shell_exec with variable argument', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-001')!;
+
+  it('flags shell_exec($user_cmd)', () => {
+    const prompt = makePrompt('$output = shell_exec($user_cmd);', 1, 'code-block');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(1);
+  });
+
+  it('flags system called with a variable argument', () => {
+    const prompt = makePrompt('system($command);', 1, 'code-block');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(1);
+  });
+});
+
+describe('CMD-001: Go exec.Command with fmt.Sprintf', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-001')!;
+
+  it('flags exec.Command used with fmt.Sprintf on the same line', () => {
+    const prompt = makePrompt('cmd := exec.Command("sh", "-c", fmt.Sprintf("ls %s", userInput))', 1, 'code-block');
+    expect(rule.check(prompt, 'test.go')).toHaveLength(1);
+  });
+});
+
+describe('CMD-001: Rust Command::new with format!', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-001')!;
+
+  it('flags Command::new used with format! on the same line', () => {
+    const prompt = makePrompt('Command::new("sh").arg(format!("ls {}", user_input))', 1, 'code-block');
+    expect(rule.check(prompt, 'test.rs')).toHaveLength(1);
+  });
+});
+
+describe('CMD-004: Python subprocess.run with shell=True and variable', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-004')!;
+
+  it('flags subprocess.run(cmd, shell=True) with a variable cmd', () => {
+    const prompt = makePrompt('subprocess.run(cmd, shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('flags subprocess.call with f-string variable and shell=True', () => {
+    const prompt = makePrompt('subprocess.call(f"rm {target}", shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag subprocess.run with static string and shell=True', () => {
+    const prompt = makePrompt('subprocess.run("ls -la", shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-Python file', () => {
+    const prompt = makePrompt('subprocess.run(cmd, shell=True)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-code-block kind', () => {
+    const prompt = makePrompt('subprocess.run(cmd, shell=True)', 1, 'raw');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+});
+
+describe('CMD-005: PHP exec functions with user-controlled argument', () => {
+  const rule = commandInjectionRules.find(r => r.id === 'CMD-005')!;
+
+  it('flags shell_exec($user_cmd)', () => {
+    const prompt = makePrompt('$out = shell_exec($user_cmd);', 1, 'code-block');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(1);
+  });
+
+  it('flags passthru with concatenated variable', () => {
+    const prompt = makePrompt('passthru("ls " . $dir);', 1, 'code-block');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(1);
+  });
+
+  it('does not flag shell_exec with a string literal only', () => {
+    const prompt = makePrompt('$out = shell_exec("ls -la");', 1, 'code-block');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-PHP file', () => {
+    const prompt = makePrompt('shell_exec($user_cmd)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-code-block kind', () => {
+    const prompt = makePrompt('shell_exec($user_cmd)', 1, 'raw');
+    expect(rule.check(prompt, 'test.php')).toHaveLength(0);
+  });
+});
+
+describe('OUT-001: Python json.loads without schema validation', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-001')!;
+
+  it('flags json.loads(response.content) without a schema validator', () => {
+    const prompt = makePrompt('data = json.loads(response.content)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag when pydantic is present in the file', () => {
+    const prompt = makePrompt(
+      'from pydantic import BaseModel\ndata = json.loads(response.content)',
+      1, 'code-block'
+    );
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+
+  it('does not flag json.loads of a non-LLM variable name', () => {
+    const prompt = makePrompt('config = json.loads(config_file)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+});
+
+describe('OUT-003: Python eval with LLM-generated output', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-003')!;
+
+  it('flags eval(llm_response) in a Python code-block', () => {
+    const prompt = makePrompt('eval(llm_response)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+});
+
+describe('OUT-004: Python eval/exec with LLM output', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-004')!;
+
+  it('flags eval(response) in a Python file', () => {
+    const prompt = makePrompt('eval(response)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('flags exec(output) in a Python file', () => {
+    const prompt = makePrompt('exec(output)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(1);
+  });
+
+  it('does not flag eval of a non-LLM variable name', () => {
+    const prompt = makePrompt('eval(user_code)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-Python file', () => {
+    const prompt = makePrompt('eval(response)', 1, 'code-block');
+    expect(rule.check(prompt, 'test.ts')).toHaveLength(0);
+  });
+
+  it('does not flag on a non-code-block kind', () => {
+    const prompt = makePrompt('eval(response)', 1, 'raw');
+    expect(rule.check(prompt, 'test.py')).toHaveLength(0);
+  });
+});

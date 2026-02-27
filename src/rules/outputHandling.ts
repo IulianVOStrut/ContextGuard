@@ -1,3 +1,4 @@
+import path from 'path';
 import type { Rule, RuleMatch } from './types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 
@@ -17,25 +18,32 @@ export const outputHandlingRules: Rule[] = [
 
       const text = prompt.text;
 
-      // JSON.parse called on a variable whose name suggests LLM output
+      // JSON.parse / json.loads called on a variable whose name suggests LLM output
       const llmOutputNames =
         /(?:content|message|output|completion|response|result|text|body|answer|reply)\b/i;
       const jsonParsePattern =
         /JSON\.parse\s*\(\s*(?!['"`{\[]|\d)\s*[a-zA-Z_$][a-zA-Z0-9_$.[\]'"]*\s*[)]/i;
+      // Python json.loads with a variable argument
+      const pyJsonLoadPattern =
+        /json\.loads\s*\(\s*(?!['"`{\[]|\d)\s*[a-z_][a-z0-9_$.[\]'"]*\s*[)]/i;
 
       // Presence of a schema validation library in the file.
       // (?<!JSON)\.parse avoids matching JSON.parse — we want Zod/AJV .parse() only.
       const schemaValidatorPattern =
         /(?:(?<!JSON)\.parse\s*\(|\.safeParse\s*\(|\.validate\s*\(|ajv\b|new\s+Ajv|Joi\s*\.|z\s*\.\s*(?:object|string|number|array|boolean|enum|union|infer)\b|yup\s*\.)/i;
+      // Python schema validators
+      const pyValidatorPattern =
+        /(?:pydantic|marshmallow|cerberus|voluptuous|jsonschema\.validate|TypeAdapter)/i;
 
-      const hasValidator = schemaValidatorPattern.test(text);
+      const hasValidator = schemaValidatorPattern.test(text) || pyValidatorPattern.test(text);
       if (hasValidator) return [];
 
       const results: RuleMatch[] = [];
       const lines = text.split('\n');
 
       lines.forEach((line, i) => {
-        if (!jsonParsePattern.test(line)) return;
+        const isJsonParse = jsonParsePattern.test(line) || pyJsonLoadPattern.test(line);
+        if (!isJsonParse) return;
         // Confirm the argument looks like LLM output (by variable name)
         if (!llmOutputNames.test(line)) return;
         results.push({
@@ -109,6 +117,39 @@ export const outputHandlingRules: Rule[] = [
       // Variable names that suggest LLM output as the argument
       const llmOutputArgPattern =
         /(?:llm|ai|gpt|claude|model|completion|response|output|result|answer|generated|message\.content|choices\[)/i;
+
+      lines.forEach((line, i) => {
+        if (execSinkPattern.test(line) && llmOutputArgPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'OUT-004',
+    title: 'Python eval() or exec() called with LLM-generated output',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never pass LLM-generated output to eval() or exec() in Python. Parse the response into a validated schema (e.g. Pydantic) first, then execute only predefined, constrained operations. Treat all model output as untrusted user input.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext !== '.py') return [];
+
+      const execSinkPattern = /\b(?:eval|exec)\s*\(/i;
+      const llmOutputArgPattern =
+        /(?:llm|ai|gpt|claude|model|completion|response|output|result|answer|generated|message\.content|choices\[)/i;
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
 
       lines.forEach((line, i) => {
         if (execSinkPattern.test(line) && llmOutputArgPattern.test(line)) {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { getLLMTrigger } from './languages.js';
 
 export interface ExtractedPrompt {
   text: string;
@@ -33,7 +34,12 @@ const DOM_SOURCE_PATTERN = /window\.location\.(?:search|hash|href)|document\.coo
 
 function isCodeFile(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
-  return ext === '.ts' || ext === '.js' || ext === '.tsx' || ext === '.jsx';
+  return [
+    '.ts', '.js', '.tsx', '.jsx',
+    '.py', '.go', '.rs', '.java', '.kt', '.kts',
+    '.cs', '.php', '.rb', '.swift', '.vue',
+    '.sh', '.bash', '.c', '.cpp', '.cc', '.h', '.hs',
+  ].includes(ext);
 }
 
 function isRawPromptFile(filePath: string): boolean {
@@ -190,6 +196,18 @@ function extractFromCode(content: string, _filePath: string): ExtractedPrompt[] 
       lineEnd: lines.length,
       kind: 'code-block',
     });
+  } else {
+    // For non-JS/TS languages, check if the file imports an LLM library and
+    // emit the whole file as a code-block so that language-agnostic rules fire.
+    const langTrigger = getLLMTrigger(path.extname(_filePath).toLowerCase());
+    if (langTrigger && langTrigger.test(content)) {
+      results.push({
+        text: content,
+        lineStart: 1,
+        lineEnd: lines.length,
+        kind: 'code-block',
+      });
+    }
   }
 
   return results;

@@ -1,3 +1,4 @@
+import path from 'path';
 import type { Rule, RuleMatch } from './types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 
@@ -28,12 +29,29 @@ export const commandInjectionRules: Rule[] = [
     check(prompt: ExtractedPrompt): RuleMatch[] {
       const results: RuleMatch[] = [];
       const lines = prompt.text.split('\n');
-      const execPattern = /(?:execSync|exec|execFile|spawnSync)\s*\(/i;
-      const templateVarPattern = /`[^`]*\$\{[^}]+\}[^`]*`/;
+
+      // JS/TS patterns — word boundary prevents matching shell_exec, passthru_exec, etc.
+      const jsExecPattern = /\b(?:execSync|exec|execFile|spawnSync)\s*\(/i;
+      const jsTemplateVarPattern = /`[^`]*\$\{[^}]+\}[^`]*`/;
+
+      // Python patterns: subprocess/os with f-string variable
+      const pyExecPattern = /(?:subprocess\.(?:run|call|Popen|check_output)|os\.(?:system|popen))\s*\(/i;
+      const pyFstringVarPattern = /f['"][^'"]*\{[a-z_][a-z0-9_]*\}[^'"]*['"]/i;
+
+      // PHP patterns: exec-family called with a $variable argument
+      const phpExecWithVarPattern = /(?:shell_exec|system|passthru|exec|popen)\s*\([^)]*\$[a-z_]/i;
+
+      // Go patterns: exec.Command used alongside fmt.Sprintf on the same line
+      const goExecPattern = /exec\.Command\s*\(/i;
+      const goFmtPattern = /fmt\.Sprintf\s*\(/i;
+
+      // Rust patterns: Command::new used alongside format! on the same line
+      const rustCmdPattern = /Command::new\s*\(/i;
+      const rustFormatPattern = /format!\s*\(/i;
 
       lines.forEach((line, i) => {
-        // Case 1: exec call with template literal variable on the same line.
-        if (execPattern.test(line) && templateVarPattern.test(line)) {
+        // JS/TS — Case 1: exec call with template literal variable on the same line.
+        if (jsExecPattern.test(line) && jsTemplateVarPattern.test(line)) {
           results.push({
             evidence: line.trim(),
             lineStart: prompt.lineStart + i,
@@ -42,11 +60,9 @@ export const commandInjectionRules: Rule[] = [
           return;
         }
 
-        // Case 2: exec call where a variable assigned from a template literal
-        // appears in the preceding 5 lines (assign-then-use pattern).
-        if (execPattern.test(line)) {
+        // JS/TS — Case 2: assign-then-use pattern (template var assigned, then exec'd).
+        if (jsExecPattern.test(line)) {
           const lookback = lines.slice(Math.max(0, i - 5), i).join('\n');
-          // Find variables assigned from template literals with interpolation
           const assignMatch = /(?:const|let|var)\s+(\w+)\s*=\s*`[^`]*\$\{[^}]+\}/g;
           let m: RegExpExecArray | null;
           while ((m = assignMatch.exec(lookback)) !== null) {
@@ -60,6 +76,46 @@ export const commandInjectionRules: Rule[] = [
               break;
             }
           }
+          return;
+        }
+
+        // Python — subprocess/os with f-string variable argument
+        if (pyExecPattern.test(line) && pyFstringVarPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+          return;
+        }
+
+        // PHP — exec-family function called with a variable argument
+        if (phpExecWithVarPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+          return;
+        }
+
+        // Go — exec.Command used with fmt.Sprintf on the same line
+        if (goExecPattern.test(line) && goFmtPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+          return;
+        }
+
+        // Rust — Command::new used with format! on the same line
+        if (rustCmdPattern.test(line) && rustFormatPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
         }
       });
 
@@ -156,6 +212,80 @@ export const commandInjectionRules: Rule[] = [
             });
             break;
           }
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'CMD-004',
+    title: 'Python subprocess.run/call with shell=True and user-controlled variable',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never pass shell=True to subprocess functions when the command argument is a variable. Use an argument list instead (e.g. subprocess.run(["ls", filepath])) so the shell never interprets the variable as part of the command string.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext !== '.py') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      const shellCallPattern = /subprocess\.(?:run|call)\b/i;
+
+      lines.forEach((line, i) => {
+        if (!shellCallPattern.test(line)) return;
+
+        // Look at this line and the next 3 for shell=True
+        const windowEnd = Math.min(i + 4, lines.length);
+        const window = lines.slice(i, windowEnd).join('\n');
+        if (!/shell\s*=\s*True/.test(window)) return;
+
+        // Flag when command argument is a variable or an f-string with a variable
+        const hasFstringVar = /f['"][^'"]*\{[a-z_][a-z0-9_]*\}/.test(window);
+        const hasVarArg = /subprocess\.(?:run|call)\s*\(\s*[a-z_][a-z0-9_]*\s*[,)]/.test(window);
+
+        if (hasFstringVar || hasVarArg) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'CMD-005',
+    title: 'PHP shell_exec/system/passthru/exec with user-controlled argument',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    remediation:
+      'Never pass user-controlled variables to PHP shell execution functions. Validate input strictly against an allowlist, use escapeshellarg() on any argument that must contain user data, or replace the shell call with a native PHP API that does not invoke a shell.',
+    check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const ext = path.extname(filePath).toLowerCase();
+      if (ext !== '.php') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // PHP exec-family called with a $variable anywhere in the argument list
+      const phpExecWithVarPattern = /(?:shell_exec|system|passthru|exec|popen)\s*\([^)]*\$[a-z_]/i;
+
+      lines.forEach((line, i) => {
+        if (phpExecWithVarPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
         }
       });
 
