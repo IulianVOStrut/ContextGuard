@@ -10,8 +10,9 @@ import { buildSarifReport } from './report/sarif.js';
 import { buildGithubAnnotationsReport } from './report/githubAnnotations.js';
 import { buildMarkdownReport } from './report/markdown.js';
 import { buildJsonlReport } from './report/jsonl.js';
+import { buildHtmlReport } from './report/html.js';
 import { allRules } from './rules/index.js';
-import type { AuditConfig, OutputFormat, FailOn, Finding } from './types.js';
+import type { AuditConfig, OutputFormat, FailOn, Finding, ScanResult } from './types.js';
 
 const program = new Command();
 
@@ -59,6 +60,9 @@ program
       "includeRules": [],
       "minConfidence": null,
       "failFileThreshold": null,
+      "concurrency": 8,
+      "cache": true,
+      "plugins": [],
     };
 
     fs.writeFileSync(outPath, JSON.stringify(template, null, 2), 'utf8');
@@ -87,6 +91,8 @@ program
   .option('--list-rules', 'Print all rules and exit')
   .option('--watch', 'Re-scan on file changes')
   .option('--concurrency <n>', 'Max files scanned in parallel (default: 8)')
+  .option('--no-cache', 'Disable incremental file cache')
+  .option('--baseline <path>', 'Compare against a saved JSON report; only report new findings')
   .action(async (opts: {
     config?: string;
     format: string;
@@ -100,6 +106,8 @@ program
     listRules?: boolean;
     watch?: boolean;
     concurrency?: string;
+    cache?: boolean;
+    baseline?: string;
   }) => {
     // ── --list-rules ──────────────────────────────────────────────────────
     if (opts.listRules) {
@@ -146,12 +154,17 @@ program
         : fileConfig.failFileThreshold,
       verbose: opts.verbose ?? fileConfig.verbose,
       concurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : fileConfig.concurrency,
+      cache: opts.cache, // commander sets false for --no-cache, undefined when not passed
+      baseline: opts.baseline ?? fileConfig.baseline,
     };
 
     if (config.verbose) {
       console.log(`Scanning: ${cwd}`);
       console.log(`Threshold: ${config.threshold}`);
       console.log(`Formats: ${config.formats.join(', ')}`);
+      if (config.cache !== false) console.log('Cache: enabled (.hound-cache.json)');
+      if (config.plugins?.length) console.log(`Plugins: ${config.plugins.join(', ')}`);
+      if (config.baseline) console.log(`Baseline: ${config.baseline}`);
     }
 
     // ── --watch mode ──────────────────────────────────────────────────────
@@ -172,6 +185,11 @@ program
     } catch (err) {
       console.error('Error during scan:', err);
       process.exit(1);
+    }
+
+    // ── Baseline diff ─────────────────────────────────────────────────────
+    if (config.baseline) {
+      result = applyBaseline(result, config.baseline);
     }
 
     // Console report always prints (unless only jsonl/json/sarif requested)
@@ -213,6 +231,16 @@ program
       console.log(`Markdown report written to: ${outPath}`);
     }
 
+    // HTML report
+    if (formats.includes('html')) {
+      const html = buildHtmlReport(result);
+      const outPath = config.out
+        ? (config.out.endsWith('.html') ? config.out : `${config.out}.html`)
+        : path.join(cwd, 'hound-report.html');
+      fs.writeFileSync(outPath, html, 'utf8');
+      console.log(`HTML report written to: ${outPath}`);
+    }
+
     // JSONL report (findings already streamed; write to file if --out set)
     if (formats.includes('jsonl')) {
       const jsonlOutput = jsonlLines.join('\n');
@@ -247,6 +275,46 @@ program
     }
     process.exit(0);
   });
+
+// ── baseline diff ─────────────────────────────────────────────────────────────
+
+function applyBaseline(result: ScanResult, baselinePath: string): ScanResult {
+  let baselineFindings: Finding[] = [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.resolve(baselinePath), 'utf8')) as ScanResult;
+    baselineFindings = raw.allFindings ?? [];
+  } catch {
+    console.warn(`Warning: could not load baseline from ${baselinePath}; reporting all findings`);
+    return result;
+  }
+
+  // A finding is "known" if baseline has same rule ID on same file
+  const knownKeys = new Set(baselineFindings.map(f => `${f.id}:${f.file}`));
+  const newFindings = result.allFindings.filter(f => !knownKeys.has(`${f.id}:${f.file}`));
+  const resolvedCount = baselineFindings.filter(f => !result.allFindings.some(r => r.id === f.id && r.file === f.file)).length;
+
+  console.log(`Baseline: ${baselineFindings.length} known · ${newFindings.length} new · ${resolvedCount} resolved`);
+
+  // Rebuild result with only new findings
+  const newFiles = result.files
+    .map(fr => {
+      const filtered = fr.findings.filter(f => !knownKeys.has(`${f.id}:${f.file}`));
+      return filtered.length > 0 ? { ...fr, findings: filtered } : null;
+    })
+    .filter((fr): fr is NonNullable<typeof fr> => fr !== null);
+
+  const rawTotal = newFiles.reduce((s, f) => s + f.fileScore, 0);
+  const repoScore = Math.min(100, rawTotal);
+
+  return {
+    ...result,
+    files: newFiles,
+    allFindings: newFindings,
+    repoScore,
+    scoreLabel: result.repoScore < 30 ? 'low' : result.repoScore < 60 ? 'medium' : result.repoScore < 80 ? 'high' : 'critical',
+    passed: repoScore < result.threshold,
+  };
+}
 
 // ── watch mode implementation ─────────────────────────────────────────────────
 

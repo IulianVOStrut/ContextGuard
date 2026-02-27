@@ -1,6 +1,6 @@
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type Confidence = 'low' | 'medium' | 'high';
-export type OutputFormat = 'console' | 'json' | 'sarif' | 'github-annotations' | 'markdown' | 'jsonl';
+export type OutputFormat = 'console' | 'json' | 'sarif' | 'github-annotations' | 'markdown' | 'jsonl' | 'html';
 export type FailOn = 'critical' | 'high' | 'medium';
 
 export interface Finding {
@@ -46,4 +46,7 @@ export interface AuditConfig {
   minConfidence?: Confidence;
   failFileThreshold?: number;
   concurrency?: number;
+  cache?: boolean;
+  baseline?: string;
+  plugins?: string[];
 }

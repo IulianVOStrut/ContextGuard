@@ -1,9 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import type { AuditConfig, FileResult, Finding, ScanResult } from '../types.js';
+import type { Rule } from '../rules/index.js';
 import { discoverFiles } from './discover.js';
 import { extractPrompts } from './extractor.js';
 import { analyzePrompt, scoreFile, buildScanResult } from '../scoring/index.js';
+import { loadCache, saveCache, getCachedFindings, setCacheEntry } from './cache.js';
+import type { HoundCache } from './cache.js';
 
 async function loadHoundIgnore(cwd: string): Promise<string[]> {
   const p = path.join(cwd, '.houndignore');
@@ -39,6 +42,32 @@ function createLimiter(concurrency: number) {
   };
 }
 
+async function loadPluginRules(plugins: string[], cwd: string): Promise<Rule[]> {
+  const rules: Rule[] = [];
+  for (const pluginPath of plugins) {
+    const resolved = path.isAbsolute(pluginPath)
+      ? pluginPath
+      : path.join(cwd, pluginPath);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = require(resolved) as Rule | Rule[] | { default: Rule | Rule[] };
+      const exported = 'default' in mod ? (mod as { default: Rule | Rule[] }).default : mod;
+      if (Array.isArray(exported)) {
+        rules.push(...(exported as Rule[]));
+      } else if (exported && typeof exported === 'object' && 'check' in exported) {
+        rules.push(exported as Rule);
+      } else {
+        console.warn(`Warning: plugin ${pluginPath} did not export a Rule or Rule[]`);
+      }
+    } catch (err) {
+      console.warn(`Warning: failed to load plugin ${pluginPath}: ${(err as Error).message}`);
+    }
+  }
+  return rules;
+}
+
+const EMPTY_CACHE: HoundCache = { version: '1', entries: {} };
+
 export async function runScan(
   cwd: string,
   config: AuditConfig,
@@ -52,6 +81,15 @@ export async function runScan(
 
   const files = await discoverFiles(cwd, config);
 
+  // Load plugin rules
+  const pluginRules = config.plugins?.length
+    ? await loadPluginRules(config.plugins, cwd)
+    : undefined;
+
+  // Load cache (enabled by default; disabled with cache: false)
+  const useCache = config.cache !== false;
+  const cache: HoundCache = useCache ? loadCache(cwd) : { ...EMPTY_CACHE, entries: {} };
+
   const concurrency = config.concurrency ?? 8;
   const limit = createLimiter(concurrency);
 
@@ -63,10 +101,31 @@ export async function runScan(
     limit(async () => {
       if (aborted) return;
 
-      const prompts = extractPrompts(file);
-      if (prompts.length === 0) return;
+      // Cache lookup
+      if (useCache) {
+        const cached = getCachedFindings(cache, file);
+        if (cached !== null) {
+          if (cached.length > 0) {
+            if (onFinding) for (const f of cached) onFinding(f);
+            const fileScore = scoreFile(cached);
+            fileResults.push({ file, findings: cached, fileScore });
+            totalFindings += cached.length;
+            if (config.maxFindings && totalFindings >= config.maxFindings) aborted = true;
+          }
+          return;
+        }
+      }
 
-      const findings = analyzePrompt(prompts, file, config);
+      const prompts = extractPrompts(file);
+      if (prompts.length === 0) {
+        if (useCache) setCacheEntry(cache, file, []);
+        return;
+      }
+
+      const findings = analyzePrompt(prompts, file, config, pluginRules);
+
+      if (useCache) setCacheEntry(cache, file, findings);
+
       if (findings.length === 0) return;
 
       if (aborted) return; // recheck after CPU work
@@ -86,6 +145,9 @@ export async function runScan(
   );
 
   await Promise.all(tasks);
+
+  // Persist updated cache
+  if (useCache) saveCache(cwd, cache);
 
   // Sort by file path for deterministic, diffable output
   fileResults.sort((a, b) => a.file.localeCompare(b.file));

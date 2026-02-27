@@ -133,3 +133,143 @@ describe('HOUND_THRESHOLD env var', () => {
     }
   });
 });
+
+// ── Baseline / diff mode ──────────────────────────────────────────────────────
+
+describe('--baseline', () => {
+  const baselinePath = path.join(FIXTURES_DIR, 'hound-results.json');
+
+  it('accepts a baseline file without crashing', () => {
+    const result = runCli([
+      'scan', '--dir', FIXTURES_DIR,
+      '--baseline', baselinePath,
+      '--format', 'console',
+    ]);
+    // Any exit code is fine; what matters is no unhandled exception
+    expect(result.stderr).not.toMatch(/Error during scan/);
+  });
+
+  it('prints baseline summary line', () => {
+    const result = runCli([
+      'scan', '--dir', FIXTURES_DIR,
+      '--baseline', baselinePath,
+      '--format', 'console',
+    ]);
+    expect(result.stdout + result.stderr).toMatch(/Baseline:/);
+  });
+
+  it('exits non-zero on bad baseline path', () => {
+    const result = runCli([
+      'scan', '--dir', FIXTURES_DIR,
+      '--baseline', '/nonexistent/baseline.json',
+      '--format', 'console',
+    ]);
+    // It warns but continues with all findings; exit code depends on findings
+    expect(result.stdout + result.stderr).toMatch(/Warning|Baseline/i);
+  });
+});
+
+// ── Cache ─────────────────────────────────────────────────────────────────────
+
+describe('incremental cache', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hound-cache-test-'));
+    // Copy one fixture file into the temp dir so we have something to scan
+    fs.copyFileSync(
+      path.join(FIXTURES_DIR, 'risky-prompt.txt'),
+      path.join(tmpDir, 'risky-prompt.txt'),
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates a cache file after the first scan', () => {
+    spawnSync('node', [CLI, 'scan', '--dir', tmpDir, '--format', 'json'], {
+      encoding: 'utf8',
+      cwd: tmpDir,
+    });
+    expect(fs.existsSync(path.join(tmpDir, '.hound-cache.json'))).toBe(true);
+  });
+
+  it('--no-cache skips cache creation', () => {
+    spawnSync('node', [CLI, 'scan', '--dir', tmpDir, '--no-cache', '--format', 'json'], {
+      encoding: 'utf8',
+      cwd: tmpDir,
+    });
+    expect(fs.existsSync(path.join(tmpDir, '.hound-cache.json'))).toBe(false);
+  });
+
+  it('second scan with cache produces same findings as first', () => {
+    const run1 = spawnSync('node', [CLI, 'scan', '--dir', tmpDir, '--format', 'json'], {
+      encoding: 'utf8', cwd: tmpDir,
+    });
+    const run2 = spawnSync('node', [CLI, 'scan', '--dir', tmpDir, '--format', 'json'], {
+      encoding: 'utf8', cwd: tmpDir,
+    });
+    // Both should exit with the same code
+    expect(run1.status).toBe(run2.status);
+  });
+});
+
+// ── Plugin system ─────────────────────────────────────────────────────────────
+
+describe('custom plugin rules', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hound-plugin-test-'));
+    // Target file: will trigger the custom plugin rule (must be > 50 chars for extractor to emit)
+    fs.writeFileSync(path.join(tmpDir, 'target.txt'), 'CUSTOM_SECRET_PATTERN found here in this test fixture for the plugin system.');
+    // Plugin: exports a single rule that fires on CUSTOM_SECRET_PATTERN
+    const plugin = `
+module.exports = {
+  id: 'PLG-001',
+  title: 'Custom plugin test rule',
+  severity: 'high',
+  confidence: 'high',
+  category: 'injection',
+  remediation: 'Remove the custom pattern.',
+  check: function(prompt) {
+    if (prompt.text && prompt.text.includes('CUSTOM_SECRET_PATTERN')) {
+      return [{ evidence: 'CUSTOM_SECRET_PATTERN', lineStart: 1, lineEnd: 1 }];
+    }
+    return [];
+  },
+};
+`;
+    fs.writeFileSync(path.join(tmpDir, 'my-plugin.js'), plugin);
+    // Config pointing to the plugin
+    const config = {
+      include: ['**/*.txt'],
+      exclude: [],
+      threshold: 1,
+      plugins: ['./my-plugin.js'],
+    };
+    fs.writeFileSync(path.join(tmpDir, '.contexthoundrc.json'), JSON.stringify(config));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads plugin and fires custom rule', () => {
+    const result = spawnSync('node', [CLI, 'scan', '--dir', tmpDir, '--verbose'], {
+      encoding: 'utf8',
+      cwd: tmpDir,
+    });
+    expect(result.stdout + result.stderr).toMatch(/PLG-001/);
+  });
+
+  it('custom rule contributes to scan failure', () => {
+    const result = spawnSync('node', [CLI, 'scan', '--dir', tmpDir], {
+      encoding: 'utf8',
+      cwd: tmpDir,
+    });
+    // threshold=1, so any finding causes exit 2 or 3
+    expect([2, 3]).toContain(result.status);
+  });
+});

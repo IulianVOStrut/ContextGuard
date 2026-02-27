@@ -22,6 +22,11 @@ Thumbs.db
 # Output files
 *.sarif
 hound-results.json
+hound-report.html
+hound-report.md
+
+# ContextHound cache
+.hound-cache.json
 
 # AI agent instruction files
 CLAUDE.md

@@ -1,6 +1,7 @@
 import type { Finding, FileResult, ScanResult, Severity, AuditConfig, Confidence } from '../types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 import { allRules, ruleToFinding, scoreMitigations } from '../rules/index.js';
+import type { Rule } from '../rules/index.js';
 
 export function scoreLabel(score: number): 'low' | 'medium' | 'high' | 'critical' {
   if (score < 30) return 'low';
@@ -18,17 +19,19 @@ function matchesFilter(id: string, pattern: string): boolean {
 export function analyzePrompt(
   prompts: ExtractedPrompt[],
   filePath: string,
-  config?: Pick<AuditConfig, 'excludeRules' | 'includeRules' | 'minConfidence'>
+  config?: Pick<AuditConfig, 'excludeRules' | 'includeRules' | 'minConfidence'>,
+  extraRules?: Rule[]
 ): Finding[] {
   const findings: Finding[] = [];
   const seen = new Set<string>();
   const confidenceOrder: Confidence[] = ['low', 'medium', 'high'];
+  const ruleset = extraRules ? [...allRules, ...extraRules] : allRules;
 
   for (const prompt of prompts) {
     // Get mitigations for this prompt
     const mitigation = scoreMitigations(prompt);
 
-    for (const rule of allRules) {
+    for (const rule of ruleset) {
       // Apply rule filters
       if (config?.excludeRules?.some(p => matchesFilter(rule.id, p))) continue;
       if (config?.includeRules?.length &&

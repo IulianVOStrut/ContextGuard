@@ -17,6 +17,9 @@ interface RcFile {
   minConfidence?: string;
   failFileThreshold?: number;
   concurrency?: number;
+  cache?: boolean;
+  baseline?: string;
+  plugins?: string[];
 }
 
 export function loadConfig(configPath?: string, cwd: string = process.cwd()): AuditConfig {
@@ -51,6 +54,9 @@ export function loadConfig(configPath?: string, cwd: string = process.cwd()): Au
     minConfidence: rc.minConfidence as Confidence,
     failFileThreshold: rc.failFileThreshold,
     concurrency: rc.concurrency,
+    cache: rc.cache,
+    baseline: rc.baseline,
+    plugins: rc.plugins,
   };
 
   // Apply environment variable overrides (priority: CLI > env > config > default)

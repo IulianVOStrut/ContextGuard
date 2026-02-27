@@ -3,6 +3,7 @@ import { buildSarifReport } from '../src/report/sarif';
 import { buildGithubAnnotationsReport } from '../src/report/githubAnnotations';
 import { buildMarkdownReport } from '../src/report/markdown';
 import { buildJsonlReport } from '../src/report/jsonl';
+import { buildHtmlReport } from '../src/report/html';
 import type { ScanResult, Finding } from '../src/types';
 
 function makeFinding(overrides: Partial<Finding> = {}): Finding {
@@ -219,5 +220,56 @@ describe('JSONL formatter', () => {
     const result = makeScanResult({ allFindings: [], files: [] });
     const output = buildJsonlReport(result);
     expect(output).toBe('');
+  });
+});
+
+// ── HTML formatter ────────────────────────────────────────────────────────────
+
+describe('HTML formatter', () => {
+  it('produces a valid HTML document', () => {
+    const result = makeScanResult();
+    const html = buildHtmlReport(result);
+    expect(html).toMatch(/<!DOCTYPE html>/i);
+    expect(html).toContain('<html');
+    expect(html).toContain('</html>');
+  });
+
+  it('embeds the scan score', () => {
+    const result = makeScanResult({ repoScore: 30 });
+    const html = buildHtmlReport(result);
+    expect(html).toContain('30');
+  });
+
+  it('shows PASSED when scan passes', () => {
+    const result = makeScanResult({ passed: true });
+    const html = buildHtmlReport(result);
+    expect(html).toContain('PASSED');
+  });
+
+  it('shows FAILED when scan fails', () => {
+    const result = makeScanResult({ passed: false });
+    const html = buildHtmlReport(result);
+    expect(html).toContain('FAILED');
+  });
+
+  it('inlines finding data as JSON', () => {
+    const result = makeScanResult();
+    const html = buildHtmlReport(result);
+    expect(html).toContain('INJ-001');
+    expect(html).toContain('src/api.ts');
+  });
+
+  it('includes severity filter buttons', () => {
+    const result = makeScanResult();
+    const html = buildHtmlReport(result);
+    expect(html).toContain('data-sev="critical"');
+    expect(html).toContain('data-sev="high"');
+  });
+
+  it('is self-contained (no external URLs)', () => {
+    const result = makeScanResult();
+    const html = buildHtmlReport(result);
+    expect(html).not.toMatch(/src="https?:\/\//);
+    expect(html).not.toMatch(/href="https?:\/\//);
   });
 });
