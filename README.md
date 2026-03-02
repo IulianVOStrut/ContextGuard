@@ -3,6 +3,7 @@
 > Static analysis tool that scans your codebase for LLM prompt-injection and multimodal security vulnerabilities. Runs offline, no API calls required.
 
 [![CI](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml/badge.svg)](https://github.com/IulianVOStrut/ContextHound/actions/workflows/context-hound.yml)
+[![npm](https://img.shields.io/npm/v/context-hound)](https://www.npmjs.com/package/context-hound)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -56,17 +57,22 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 ## Installation
 
+**Global install** — adds the `hound` command to your PATH:
+
 ```bash
-git clone https://github.com/IulianVOStrut/ContextHound.git
-cd ContextHound
-npm install
-npm run build
+npm install -g context-hound
 ```
 
-To use `hound` as a global command:
+**Per-project install** — scoped to one repo, runs via `npx hound` or an npm script:
 
 ```bash
-npm link
+npm install --save-dev context-hound
+```
+
+**Zero-install** — no install needed, uses the cached npm registry copy:
+
+```bash
+npx context-hound scan --dir .
 ```
 
 ---
@@ -165,9 +171,9 @@ jobs:
         with:
           node-version: '20'
 
-      - run: npm ci && npm run build
+      - run: npm install -g context-hound
 
-      - run: npm run hound -- --format console,sarif,github-annotations --out results.sarif
+      - run: hound scan --format console,sarif,github-annotations --out results.sarif
 
       - name: Upload to GitHub Code Scanning
         if: always()
