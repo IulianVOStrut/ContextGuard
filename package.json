@@ -18,7 +18,7 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "hound": "node dist/cli.js scan",
-    "test": "jest --forceExit",
+    "test": "jest",
     "test:watch": "jest --watch",
     "lint": "eslint src",
     "benchmark": "npm run build && node scripts/benchmark.js",
