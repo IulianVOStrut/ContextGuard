@@ -14,14 +14,14 @@ import { buildHtmlReport } from './report/html.js';
 import { buildCsvReport } from './report/csv.js';
 import { buildJunitReport } from './report/junit.js';
 import { allRules } from './rules/index.js';
-import type { AuditConfig, OutputFormat, FailOn, Finding, ScanResult } from './types.js';
+import type { AuditConfig, OutputFormat, FailOn, Confidence, Finding, ScanResult } from './types.js';
 
 const program = new Command();
 
 program
   .name('hound')
   .description('ContextHound: Scan LLM prompts for injection and security risks')
-  .version('1.6.0');
+  .version('1.7.0');
 
 // ── init command ─────────────────────────────────────────────────────────────
 
@@ -95,6 +95,7 @@ program
   .option('--concurrency <n>', 'Max files scanned in parallel (default: 8)')
   .option('--no-cache', 'Disable incremental file cache')
   .option('--baseline <path>', 'Compare against a saved JSON report; only report new findings')
+  .option('--min-confidence <level>', 'Minimum confidence level to report: low|medium|high (default: low)')
   .action(async (opts: {
     config?: string;
     format: string;
@@ -110,6 +111,7 @@ program
     concurrency?: string;
     cache?: boolean;
     baseline?: string;
+    minConfidence?: string;
   }) => {
     // ── --list-rules ──────────────────────────────────────────────────────
     if (opts.listRules) {
@@ -158,6 +160,7 @@ program
       concurrency: opts.concurrency ? parseInt(opts.concurrency, 10) : fileConfig.concurrency,
       cache: opts.cache, // commander sets false for --no-cache, undefined when not passed
       baseline: opts.baseline ?? fileConfig.baseline,
+      minConfidence: (opts.minConfidence as Confidence | undefined) ?? fileConfig.minConfidence,
     };
 
     if (config.verbose) {
