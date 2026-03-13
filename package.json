@@ -1,8 +1,12 @@
 {
   "name": "context-hound",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Developer-first prompt-injection scanner for CI and local use",
   "main": "dist/cli.js",
+  "exports": {
+    ".": "./dist/cli.js",
+    "./runtime": "./dist/runtime/index.js"
+  },
   "bin": {
     "hound": "dist/cli.js"
   },

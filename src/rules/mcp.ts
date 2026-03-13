@@ -136,4 +136,112 @@ export const mcpRules: Rule[] = [
       return matchPattern(prompt, pattern);
     },
   },
+  {
+    id: 'MCP-006',
+    title: 'MCP confused deputy — auth token from MCP request forwarded to downstream API without re-validation',
+    severity: 'critical',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'Never forward an auth token received from an MCP client directly as the credential for a downstream API call. The MCP server is acting as a deputy: it must independently verify that the requesting client is authorised to use the downstream resource. Issue a fresh credential scoped to the specific request, or introspect the inbound token before forwarding.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+      if (!MCP_CONTEXT_PATTERN.test(text)) return [];
+
+      // Only fire in files that also make outbound HTTP calls
+      if (!/\bfetch\s*\(|\baxios\b|\bgot\s*\.|\brequire\s*\(\s*['"`]node-fetch|\bhttp\.request\b/i.test(text)) return [];
+
+      // Suppress if re-validation is present
+      if (/validateToken|verifyToken|introspect|re[-_]?auth|checkPermission/i.test(text)) return [];
+
+      // Detect: Authorization header value sourced from request/params/context/event/meta
+      const pattern =
+        /Authorization\s*:\s*(?:`[^`\n]*\$\{[^}]*(?:request|params?|event|context|ctx|meta)\b|(?:request|params?|event|context|ctx|meta)(?:\?\.|\.)[\w?.[\]]*)/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'MCP-007',
+    title: 'Cross-MCP context poisoning — shared state written from MCP output without integrity check',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'Never write raw MCP tool responses directly into shared or global context stores that are accessible to other MCP servers or agents. A compromised MCP server can poison shared state and influence the behaviour of all downstream consumers. Hash or sign values before writing, validate provenance on read, or isolate each MCP server\'s context namespace.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+      if (!MCP_CONTEXT_PATTERN.test(text)) return [];
+
+      // Suppress if integrity checks are present
+      if (/hash|hmac|sign(?:ature)?|verify|checksum|provenance/i.test(text)) return [];
+
+      // Detect: shared/global context store written with a variable (not a literal)
+      // Require RHS to start with a word-start char while excluding known literals
+      const pattern =
+        /(?:shared(?:Context|State|Memory|Cache)|global(?:Context|State|McpState|Memory)|crossMcp|agentContext)\s*(?:\[[^\]]+\]|\.\w+)?\s*=\s*(?!null\b|undefined\b|false\b|true\b|['"`\d])[a-z_$]/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'MCP-008',
+    title: 'MCP stdio transport command loaded from variable path',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'The command path for StdioClientTransport or StdioServerTransport must be a static string literal or a value resolved from a trusted, allowlisted configuration source. A path sourced from user input, an environment variable without validation, or an LLM-generated value enables an attacker to redirect the transport to a malicious binary.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+      if (!MCP_CONTEXT_PATTERN.test(text)) return [];
+
+      // Detect: new Stdio*Transport({ command: <variable> }) — variable, not a string literal
+      const pattern =
+        /new\s+Stdio(?:Client|Server)Transport\s*\(\s*\{[^}]*\bcommand\s*:\s*(?!['"`])[a-z_$][a-z0-9_$.[\]]*/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'MCP-009',
+    title: 'MCP session ID used as auth decision without expiry check',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'Never rely solely on a matching sessionId or connectionId for authorisation decisions without verifying the session has not expired. Sessions without TTL or timestamp validation are vulnerable to replay attacks: an attacker who captures a valid session ID can reuse it indefinitely.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+      if (!MCP_CONTEXT_PATTERN.test(text)) return [];
+
+      // Suppress if expiry/TTL logic is present
+      if (/expir|ttl|maxAge|validUntil|expiresAt|isExpired|sessionAge|renewSession/i.test(text)) return [];
+
+      // Detect: sessionId/connectionId used in an equality comparison (auth gate)
+      const pattern =
+        /(?:session(?:Id|Token|Key)|connection(?:Id|Key)|clientSessionId)\s*[!=]={1,2}\s*\S/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'MCP-010',
+    title: 'MCP transport event payload injected into LLM context without sanitisation',
+    severity: 'critical',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'Never pass raw MCP transport event or message payloads directly into LLM message arrays or prompt strings. A malicious MCP server can craft event payloads that contain prompt injection instructions. Validate and sanitise event data against a strict schema before including it in any LLM context.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+      if (!MCP_CONTEXT_PATTERN.test(text)) return [];
+
+      // Detect: event/message payload field used in messages.push or content: assignment
+      const pattern =
+        /(?:messages?\.push|content\s*:)\s*(?:\{[^}\n]*)?\b(?:event|msg|message|e|data|payload)\s*(?:\?\.|\.)?\s*(?:data|content|text|body|payload)\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];

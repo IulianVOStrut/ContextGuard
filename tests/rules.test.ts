@@ -1878,6 +1878,194 @@ describe('MCP-005: Stdio transport with shell:true', () => {
   });
 });
 
+// ── MCP-006–010 ───────────────────────────────────────────────────────────────
+
+describe('MCP-006: Confused deputy — auth token forwarded to downstream API', () => {
+  const rule = mcpRules.find(r => r.id === 'MCP-006')!;
+  const mcpHeader = 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n';
+
+  it('flags Authorization header sourced from request.params', () => {
+    const code = mcpHeader + [
+      'async function handler(request) {',
+      '  const resp = await fetch("https://api.example.com/data", {',
+      '    headers: { Authorization: request.params.authToken },',
+      '  });',
+      '  return resp.json();',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(1);
+  });
+
+  it('flags Authorization header built with template from params', () => {
+    const code = mcpHeader + [
+      'const result = await fetch(url, {',
+      '  headers: { Authorization: `Bearer ${params.token}` },',
+      '});',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when re-validation is present', () => {
+    const code = mcpHeader + [
+      'const token = await validateToken(request.params.authToken);',
+      'const resp = await fetch(url, { headers: { Authorization: token } });',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(0);
+  });
+
+  it('does not flag non-MCP files', () => {
+    const code = 'const resp = await fetch(url, { headers: { Authorization: request.params.token } });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = mcpHeader + 'fetch(url, { headers: { Authorization: params.token } });';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'proxy.ts')).toHaveLength(0);
+  });
+});
+
+describe('MCP-007: Cross-MCP context poisoning — shared state written without integrity check', () => {
+  const rule = mcpRules.find(r => r.id === 'MCP-007')!;
+  const mcpHeader = 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n';
+
+  it('flags sharedContext written from variable', () => {
+    const code = mcpHeader + 'sharedContext[toolName] = toolResult;';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(1);
+  });
+
+  it('flags globalState written from variable', () => {
+    const code = mcpHeader + 'globalState.cache = serverResponse;';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when hash/signature is present', () => {
+    const code = mcpHeader + [
+      'const hash = hmac(toolResult);',
+      'sharedContext[toolName] = toolResult;',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(0);
+  });
+
+  it('does not flag sharedContext assigned a string literal', () => {
+    const code = mcpHeader + 'sharedContext.status = "ready";';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'proxy.ts')).toHaveLength(0);
+  });
+
+  it('does not flag non-MCP files', () => {
+    const code = 'sharedContext[key] = value;';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'other.ts')).toHaveLength(0);
+  });
+});
+
+describe('MCP-008: MCP stdio transport command from variable path', () => {
+  const rule = mcpRules.find(r => r.id === 'MCP-008')!;
+  const mcpHeader = 'import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";\n';
+
+  it('flags StdioClientTransport with variable command', () => {
+    const code = mcpHeader + 'const t = new StdioClientTransport({ command: serverPath, args: [] });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'client.ts')).toHaveLength(1);
+  });
+
+  it('flags StdioServerTransport with variable command', () => {
+    const code = [
+      'import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";',
+      'const t = new StdioServerTransport({ command: config.mcpBin });',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'server.ts')).toHaveLength(1);
+  });
+
+  it('does not flag string literal command', () => {
+    const code = mcpHeader + 'const t = new StdioClientTransport({ command: "python", args: ["server.py"] });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'client.ts')).toHaveLength(0);
+  });
+
+  it('does not flag files with no MCP SDK import', () => {
+    // No MCP context pattern present — rule should not fire
+    const code = 'const t = new LocalTransport({ command: serverPath });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'other.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = mcpHeader + 'new StdioClientTransport({ command: serverPath });';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'client.ts')).toHaveLength(0);
+  });
+});
+
+describe('MCP-009: MCP session ID used as auth decision without expiry check', () => {
+  const rule = mcpRules.find(r => r.id === 'MCP-009')!;
+  const mcpHeader = 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n';
+
+  it('flags sessionId equality check without expiry guard', () => {
+    const code = mcpHeader + [
+      'if (request.sessionId === activeSession.id) {',
+      '  grantAccess(request);',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'auth.ts')).toHaveLength(1);
+  });
+
+  it('flags connectionId equality check without expiry guard', () => {
+    const code = mcpHeader + 'const valid = connectionId === storedId;';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'auth.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when expiry check is present', () => {
+    const code = mcpHeader + [
+      'if (request.sessionId === activeSession.id && !isExpired(activeSession)) {',
+      '  grantAccess(request);',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'auth.ts')).toHaveLength(0);
+  });
+
+  it('does not flag when TTL is present', () => {
+    const code = mcpHeader + [
+      'const ttl = session.expiresAt - Date.now();',
+      'if (request.sessionId === session.id && ttl > 0) { grantAccess(); }',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'auth.ts')).toHaveLength(0);
+  });
+
+  it('does not flag non-MCP files', () => {
+    const code = 'if (sessionId === storedId) { allow(); }';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'other.ts')).toHaveLength(0);
+  });
+});
+
+describe('MCP-010: MCP transport event payload injected into LLM context', () => {
+  const rule = mcpRules.find(r => r.id === 'MCP-010')!;
+  const mcpHeader = 'import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";\n';
+
+  it('flags event.data pushed into messages array', () => {
+    const code = mcpHeader + [
+      'transport.on("message", (event) => {',
+      '  messages.push({ role: "user", content: event.data });',
+      '});',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'handler.ts')).toHaveLength(1);
+  });
+
+  it('flags content: assigned from payload.body', () => {
+    const code = mcpHeader + 'const msg = { role: "user", content: payload.body };';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'handler.ts')).toHaveLength(1);
+  });
+
+  it('does not flag content assigned from a string literal', () => {
+    const code = mcpHeader + 'messages.push({ role: "user", content: "static text" });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'handler.ts')).toHaveLength(0);
+  });
+
+  it('does not flag non-MCP files', () => {
+    const code = 'messages.push({ role: "user", content: event.data });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'other.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = mcpHeader + 'messages.push({ content: event.data });';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'handler.ts')).toHaveLength(0);
+  });
+});
+
 // ── Encoding rules (ENC-003–006) ─────────────────────────────────────────────
 
 describe('ENC-003: Unicode Tags block characters', () => {

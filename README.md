@@ -39,7 +39,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **70 security rules** | Across 11 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic |
+| **91 security rules** | Across 14 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic, MCP, supply chain, DoS |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **7 output formats** | Console, JSON, SARIF, GitHub Annotations, Markdown, JSONL streaming, and interactive HTML |
@@ -107,7 +107,7 @@ hound scan --format markdown --out report
 # Stream findings as JSONL (one JSON object per line)
 hound scan --format jsonl | jq '.severity'
 
-# List all 70 rules
+# List all 91 rules
 hound scan --list-rules
 
 # Interactive HTML report (self-contained, open in browser)
@@ -451,7 +451,7 @@ Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` direct
 
 ### K. Agentic (AGT) — v1.3
 
-Targets risks specific to multi-step agentic systems: unbounded execution loops, unvalidated memory writes, and user input leaking into agent planning.
+Targets risks specific to multi-step agentic systems: unbounded execution loops, unvalidated memory writes, user input leaking into agent planning, and inter-agent trust boundary violations.
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -459,6 +459,26 @@ Targets risks specific to multi-step agentic systems: unbounded execution loops,
 | AGT-002 | High | Agent loop with no iteration or timeout guard — no `max_iterations`, `max_steps`, `max_turns`, `timeout`, or `recursion_limit` in agent config or code |
 | AGT-003 | High | Agent memory written from unvalidated LLM output — `memory.save()`, `memory.add()`, or `vectorstore.upsert()` called with a raw model response variable |
 | AGT-004 | High | Plan injection — user input interpolated directly into agent planning, task, or goal prompt without a trust-boundary wrapper |
+| AGT-005 | Critical | Agent trusts claimed identity without cryptographic verification — trust decision based on `agentId`, `sender`, `source`, or `from_agent` field without HMAC, JWT, or shared-secret verification |
+| AGT-006 | High | Raw agent output chained as input to another agent without validation — `.run()`, `.invoke()`, or `.generate()` called with another agent's `.output`/`.content`/`.result` directly as the argument |
+| AGT-007 | Critical | Agent self-modification — agent rewrites its own `system_prompt`, `instructions`, or `tools` list with LLM-generated content at runtime |
+
+### L. MCP Security (MCP) — v1.7 / v1.8
+
+Covers trust-boundary and supply-chain risks specific to the Model Context Protocol. MCP introduces a new attack surface: tool descriptions, transport URLs, event payloads, and cross-server shared state can all carry injection or privilege-escalation payloads.
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| MCP-001 | Critical | MCP tool description injected into LLM prompt without sanitization — raw `tool.description` value used in `role: "system"` or `messages.push()` |
+| MCP-002 | High | MCP tool registered with dynamic name or description — `server.tool()` first argument is a variable or template literal, enabling rug-pull attacks post-approval |
+| MCP-003 | High | MCP sampling/createMessage handler without human approval guard — `setRequestHandler(CreateMessageRequestSchema)` without `requireHumanApproval`, `confirm`, or `approve` check |
+| MCP-004 | Medium | MCP transport URL constructed from variable — `SSEClientTransport` or `WebSocketClientTransport` initialised with a `new URL(variable)` instead of a static string |
+| MCP-005 | High | MCP stdio transport uses `shell: true` — makes the command string shell-interpolated and injectable if any argument is user-controlled |
+| MCP-006 | Critical | MCP confused deputy — auth token from MCP request forwarded to downstream API without re-validation; `Authorization` header value sourced directly from `request.params`, `context`, or `event` |
+| MCP-007 | High | Cross-MCP context poisoning — shared/global context store written from MCP output without hash, signature, or provenance check |
+| MCP-008 | High | MCP stdio transport command loaded from variable path — `StdioClientTransport`/`StdioServerTransport` `command:` field is a variable rather than a static string literal |
+| MCP-009 | High | MCP session ID used as auth decision without expiry check — `sessionId`/`connectionId` equality comparison with no TTL, `expiresAt`, or `isExpired` guard (replay attack) |
+| MCP-010 | Critical | MCP transport event payload injected into LLM context without sanitisation — event/message `.data`, `.content`, or `.payload` used directly in `messages.push()` or a `content:` field |
 
 ---
 
@@ -523,8 +543,15 @@ src/
 │   ├── multimodal.ts       # VIS-* rules
 │   ├── skills.ts           # SKL-* rules
 │   ├── agentic.ts          # AGT-* rules
+│   ├── mcp.ts              # MCP-* rules
+│   ├── supplyChain.ts      # SCH-* rules
+│   ├── dos.ts              # DOS-* rules
 │   ├── mitigation.ts       # Mitigation presence detection
 │   └── index.ts            # Rule registry
+├── runtime/
+│   ├── index.ts            # createGuard() — runtime message inspection API
+│   ├── inspect.ts          # Core inspection logic for live message arrays
+│   └── types.ts            # RuntimeMessage, InspectResult, GuardConfig types
 ├── scoring/
 │   └── index.ts            # Risk score calculation and rule filtering
 └── report/
