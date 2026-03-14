@@ -2532,3 +2532,181 @@ describe('AGT-007: Agent modifies its own system prompt, instructions, or tool l
     expect(rule.check(makePrompt(code, 1, 'raw'), 'agent.py')).toHaveLength(0);
   });
 });
+
+// ── AGT-008–011 ───────────────────────────────────────────────────────────────
+
+describe('AGT-008: Agent assumes IAM role from LLM output (ASI03)', () => {
+  const rule = agenticRules.find(r => r.id === 'AGT-008')!;
+
+  it('flags assumeRole called with LLM result', () => {
+    const code = [
+      'const result = await llm.complete(prompt);',
+      'await iam.assumeRole({ RoleArn: result.content });',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags grantAccess called with response value', () => {
+    const code = 'grantAccess(response.role);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags setPermissions called with LLM output', () => {
+    const code = 'agent.setPermissions(output.permissions);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('does not flag assumeRole with a static string ARN', () => {
+    const code = 'await iam.assumeRole({ RoleArn: "arn:aws:iam::123456789012:role/MyRole" });';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(0);
+  });
+
+  it('does not flag grantAccess without LLM output variable', () => {
+    const code = 'grantAccess(config.defaultRole);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'iam.assumeRole(result.role)';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'agent.ts')).toHaveLength(0);
+  });
+});
+
+describe('AGT-009: Agent loads tool from variable path at runtime (ASI04)', () => {
+  const rule = agenticRules.find(r => r.id === 'AGT-009')!;
+
+  it('flags agent.loadTool with a variable argument', () => {
+    const code = 'agent.loadTool(userConfig.toolPath);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags agent.addTool with a variable argument', () => {
+    const code = 'executor.addTool(dynamicTool);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags dynamic import with variable named pluginUrl', () => {
+    const code = 'const plugin = await import(pluginUrl);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags dynamic import with variable named toolModule', () => {
+    const code = 'const t = await import(toolModule);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('does not flag agent.addTool with a string literal', () => {
+    const code = 'agent.addTool("search");';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'agent.loadTool(pluginUrl)';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'agent.ts')).toHaveLength(0);
+  });
+});
+
+describe('AGT-010: Raw agent output forwarded to another agent without trust validation (ASI07)', () => {
+  const rule = agenticRules.find(r => r.id === 'AGT-010')!;
+
+  it('flags broker.send with agent output', () => {
+    const code = 'broker.send(agentA.output);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('flags router.forward with agent result', () => {
+    const code = 'router.forward(upstreamAgent.result);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('flags orchestrator.dispatch with agent message', () => {
+    const code = 'orchestrator.dispatch(agentOne.message);';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when HMAC signing is present', () => {
+    const code = [
+      'const sig = hmac(agentA.output, secret);',
+      'broker.send(agentA.output);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(0);
+  });
+
+  it('does not flag when JWT verification is present', () => {
+    const code = [
+      'const verified = jwt.verify(token, secret);',
+      'router.forward(agentA.result);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'broker.send(agentA.output)';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'pipeline.ts')).toHaveLength(0);
+  });
+});
+
+describe('AGT-011: Agent step error silently swallowed (ASI08)', () => {
+  const rule = agenticRules.find(r => r.id === 'AGT-011')!;
+
+  it('flags empty catch in agent.run context', () => {
+    const code = [
+      'try {',
+      '  await agent.run(plan);',
+      '} catch (e) {',
+      '  console.log(e);',
+      '}',
+      'continueWithNextStep();',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'runner.ts')).toHaveLength(1);
+  });
+
+  it('flags swallowed catch in AgentExecutor context', () => {
+    const code = [
+      'try {',
+      '  result = await AgentExecutor.invoke(input);',
+      '} catch (err) {',
+      '  console.error(err);',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'runner.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when error is re-thrown', () => {
+    const code = [
+      'try {',
+      '  await agent.run(plan);',
+      '} catch (e) {',
+      '  throw e;',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'runner.ts')).toHaveLength(0);
+  });
+
+  it('does not flag when error state is set', () => {
+    const code = [
+      'try {',
+      '  await executeStep(step);',
+      '} catch (e) {',
+      '  failed = true;',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'runner.ts')).toHaveLength(0);
+  });
+
+  it('does not fire without agent execution context', () => {
+    const code = [
+      'try {',
+      '  await fetchData();',
+      '} catch (e) {',
+      '  console.log(e);',
+      '}',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'runner.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'try { agent.run(plan); } catch(e) {}';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'runner.ts')).toHaveLength(0);
+  });
+});

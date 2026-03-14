@@ -171,4 +171,101 @@ export const agenticRules: Rule[] = [
       return results;
     },
   },
+  {
+    id: 'AGT-008',
+    title: 'Agent assumes IAM role or grants permissions based on LLM output (ASI03)',
+    severity: 'critical',
+    confidence: 'medium',
+    category: 'agentic',
+    remediation:
+      'Never call IAM, RBAC, or credential-assignment functions with values derived from LLM output. A prompt injection or jailbreak can escalate the agent\'s own privileges by inducing it to call assumeRole, grantAccess, or setPermissions with an attacker-chosen role ARN or permission set. Resolve permitted roles from a static allowlist in your application code, never from model responses.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      const iamPattern =
+        /(?:assumeRole|putRolePolicy|attachRolePolicy|createRole|grantAccess|setPermissions?|addPermissions?|elevatePrivilege|setCredentials?|assignRole)\s*[.(]/i;
+      const llmOutputPattern =
+        /\b(?:response|output|result|completion|llm_?output|model_?output|answer|generated|content|choices)\b/i;
+
+      lines.forEach((line, i) => {
+        if (iamPattern.test(line) && llmOutputPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'AGT-009',
+    title: 'Agent loads tool or plugin from variable path or external URL at runtime (ASI04)',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'agentic',
+    remediation:
+      'Never load tools, plugins, or modules at runtime from user-controlled values, LLM-generated paths, or dynamic imports without an explicit allowlist. An attacker who can influence the loaded path or URL can substitute a malicious binary or script for a legitimate tool. Resolve tool implementations from a trusted, static registry at startup.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      // Detect: agent.loadTool/addTool/loadPlugin(variable) or dynamic import(variableNamedWithTool/Plugin/Url)
+      const pattern =
+        /(?:agent|executor|planner|runner)\s*\.(?:loadTool|addTool|registerTool|loadPlugin|importTool)\s*\(\s*(?!['"`])[a-z_$]|(?:await\s+)?import\s*\(\s*[a-z_$][a-z0-9_$.]*(?:Url|Path|Plugin|Tool|Module)\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'AGT-010',
+    title: 'Raw agent output forwarded to another agent without trust boundary validation (ASI07)',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'agentic',
+    remediation:
+      'Never pass one agent\'s raw output directly as the instruction payload to another agent or message bus without signing or schema validation. In multi-agent pipelines, a compromised upstream agent can inject instructions into every downstream agent that receives its output. Validate, sanitise, and schema-check inter-agent messages at each hop.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+
+      // Suppress if message signing / cryptographic verification is present
+      const signingGuard = /hmac|sign(?:ature)?|jwt|verify|bearer\s+token|shared.?secret/i;
+      if (signingGuard.test(text)) return [];
+
+      // Detect: agent/broker send/forward/route/dispatch called with another agent's output
+      const pattern =
+        /(?:agent|broker|orchestrator|router|hub|bus)\w*\s*\.(?:send|forward|route|dispatch|relay|publish|invoke|call|run)\s*\(\s*(?:await\s+)?\w+\.(?:output|result|message|response|content|lastMessage|text)\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'AGT-011',
+    title: 'Agent step error silently swallowed — downstream steps proceed on bad state (ASI08)',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'agentic',
+    remediation:
+      'Never swallow exceptions from agent plan steps without halting or flagging the run. Silently catching errors allows subsequent steps to execute against incomplete or corrupted state, which can compound failures or be exploited to skip safety checks. Re-throw, reject the promise, or set an explicit error/aborted state that downstream steps check before proceeding.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const text = prompt.text;
+
+      // Only fire in agent step/plan execution context
+      if (!/agent\.(?:run|execute|invoke|step)\s*\(|executeStep\b|runPlan\b|AgentExecutor\b|planStep\b|chain\.(?:run|invoke|call)\s*\(/i.test(text)) return [];
+
+      // Must have a try/catch to be relevant
+      if (!/try\s*\{/.test(text)) return [];
+
+      // Suppress if errors are properly propagated or the run is aborted
+      if (/\bthrow\b|\breject\s*\(|\berrorState\b|\berror\s*=\s*(?!null|false)|failed\s*=\s*true|status\s*=\s*['"`](?:error|fail|abort)/i.test(text)) return [];
+
+      // Flag the catch line as evidence
+      const pattern = /\bcatch\s*\([^)]*\)\s*\{/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];

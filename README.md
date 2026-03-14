@@ -39,7 +39,7 @@ It fits into your existing workflow as a CLI command, an `npm` script, or a GitH
 
 | | |
 |---|---|
-| **91 security rules** | Across 14 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic, MCP, supply chain, DoS |
+| **95 security rules** | Across 14 categories: injection, exfiltration, jailbreak, unsafe tool use, command injection, RAG poisoning, encoding, output handling, multimodal, skills marketplace, agentic, MCP, supply chain, DoS |
 | **Numeric risk score (0-100)** | Normalized repo-level score with low, medium, high and critical thresholds |
 | **Mitigation detection** | Explicit safety language in your prompts reduces your score |
 | **7 output formats** | Console, JSON, SARIF, GitHub Annotations, Markdown, JSONL streaming, and interactive HTML |
@@ -107,7 +107,7 @@ hound scan --format markdown --out report
 # Stream findings as JSONL (one JSON object per line)
 hound scan --format jsonl | jq '.severity'
 
-# List all 91 rules
+# List all 95 rules
 hound scan --list-rules
 
 # Interactive HTML report (self-contained, open in browser)
@@ -449,9 +449,9 @@ Targets OpenClaw `SKILL.md` files and any markdown files inside `skills/` direct
 
 > **Scanning OpenClaw skills:** Run `npx hound scan --dir ./skills` or add `**/skills/**/*.md` and `**/SKILL.md` to your `include` config. ContextHound automatically emits skill files as `code-block` for multi-line rule analysis.
 
-### K. Agentic (AGT) — v1.3
+### K. Agentic (AGT) — v1.3 / v1.9
 
-Targets risks specific to multi-step agentic systems: unbounded execution loops, unvalidated memory writes, user input leaking into agent planning, and inter-agent trust boundary violations.
+Targets risks specific to multi-step agentic systems: unbounded execution loops, unvalidated memory writes, user input leaking into agent planning, inter-agent trust boundary violations, and OWASP Agentic AI Security Issues (ASI) gaps.
 
 | ID | Severity | Description |
 |----|----------|-------------|
@@ -462,6 +462,10 @@ Targets risks specific to multi-step agentic systems: unbounded execution loops,
 | AGT-005 | Critical | Agent trusts claimed identity without cryptographic verification — trust decision based on `agentId`, `sender`, `source`, or `from_agent` field without HMAC, JWT, or shared-secret verification |
 | AGT-006 | High | Raw agent output chained as input to another agent without validation — `.run()`, `.invoke()`, or `.generate()` called with another agent's `.output`/`.content`/`.result` directly as the argument |
 | AGT-007 | Critical | Agent self-modification — agent rewrites its own `system_prompt`, `instructions`, or `tools` list with LLM-generated content at runtime |
+| AGT-008 | Critical | ASI03 — Agent calls `assumeRole`, `grantAccess`, or `setPermissions` with a value derived from LLM output; privilege escalation via prompt injection |
+| AGT-009 | High | ASI04 — Agent loads a tool or plugin at runtime from a variable path or dynamic import, enabling supply chain substitution |
+| AGT-010 | High | ASI07 — Raw agent output forwarded to another agent via `send`/`route`/`dispatch` without HMAC, JWT signing, or schema validation |
+| AGT-011 | High | ASI08 — Agent plan step error caught silently (no rethrow, no error-state flag); downstream steps proceed on bad or incomplete state |
 
 ### L. MCP Security (MCP) — v1.7 / v1.8
 
