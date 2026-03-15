@@ -35,8 +35,9 @@ export function buildJunitReport(result: ScanResult): string {
       const caseName = escapeXml(`${f.id}: ${f.title}`);
       const className = escapeXml(file);
       const failureMsg = escapeXml(`${f.id} [${f.severity}]: ${f.title}`);
+      const mitreNote = f.mitre ? `\nMITRE ATT&CK: ${f.mitre}` : '';
       const body = escapeXml(
-        `File: ${f.file}\nLine: ${f.lineStart}\nEvidence: ${f.evidence}\nRemediation: ${f.remediation}`,
+        `File: ${f.file}\nLine: ${f.lineStart}\nEvidence: ${f.evidence}${mitreNote}\nRemediation: ${f.remediation}`,
       );
 
       lines.push(`    <testcase name="${caseName}" classname="${className}" time="0">`);

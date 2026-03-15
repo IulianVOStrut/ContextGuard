@@ -13,6 +13,7 @@ import { agenticRules } from './agentic.js';
 import { mcpRules } from './mcp.js';
 import { supplyChainRules } from './supplyChain.js';
 import { dosRules } from './dos.js';
+import { persistenceRules } from './persistence.js';
 
 export const allRules: Rule[] = [
   ...injectionRules,
@@ -29,9 +30,10 @@ export const allRules: Rule[] = [
   ...mcpRules,
   ...supplyChainRules,
   ...dosRules,
+  ...persistenceRules,
 ];
 
-export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules, skillsRules, agenticRules, mcpRules, supplyChainRules, dosRules };
+export { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules, skillsRules, agenticRules, mcpRules, supplyChainRules, dosRules, persistenceRules };
 export type { Rule, RuleMatch } from './types.js';
 export { calcRiskPoints, ruleToFinding } from './types.js';
 export { scoreMitigations } from './mitigation.js';

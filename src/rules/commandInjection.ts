@@ -24,6 +24,7 @@ export const commandInjectionRules: Rule[] = [
     severity: 'critical',
     confidence: 'high',
     category: 'injection',
+    mitre: 'T1059',
     remediation:
       'Never interpolate variables directly into shell command strings. Use an array-based spawn API (e.g. child_process.spawn with an args array) so the shell never sees the variable as part of the command string.',
     check(prompt: ExtractedPrompt): RuleMatch[] {
@@ -128,6 +129,7 @@ export const commandInjectionRules: Rule[] = [
     severity: 'high',
     confidence: 'high',
     category: 'injection',
+    mitre: 'T1059',
     remediation:
       'Block all forms of command substitution: $(), backticks, and ${ } in the same validation. Prefer an allowlist of safe command patterns over a denylist of dangerous ones.',
     check(prompt: ExtractedPrompt): RuleMatch[] {
@@ -168,6 +170,7 @@ export const commandInjectionRules: Rule[] = [
     severity: 'high',
     confidence: 'medium',
     category: 'injection',
+    mitre: 'T1059',
     remediation:
       'Sanitise or validate file paths before using them in shell commands. Use shell-quote or shlex to escape arguments, or pass paths as array arguments to spawn() to avoid shell interpretation entirely.',
     check(prompt: ExtractedPrompt): RuleMatch[] {
@@ -224,6 +227,7 @@ export const commandInjectionRules: Rule[] = [
     severity: 'critical',
     confidence: 'high',
     category: 'injection',
+    mitre: 'T1059',
     remediation:
       'Never pass shell=True to subprocess functions when the command argument is a variable. Use an argument list instead (e.g. subprocess.run(["ls", filepath])) so the shell never interprets the variable as part of the command string.',
     check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
@@ -266,6 +270,7 @@ export const commandInjectionRules: Rule[] = [
     severity: 'critical',
     confidence: 'high',
     category: 'injection',
+    mitre: 'T1059',
     remediation:
       'Never pass user-controlled variables to PHP shell execution functions. Validate input strictly against an allowlist, use escapeshellarg() on any argument that must contain user data, or replace the shell call with a native PHP API that does not invoke a shell.',
     check(prompt: ExtractedPrompt, filePath: string): RuleMatch[] {
@@ -290,6 +295,65 @@ export const commandInjectionRules: Rule[] = [
       });
 
       return results;
+    },
+  },
+  {
+    id: 'CMD-006',
+    title: 'Reverse shell via bash /dev/tcp file descriptor redirect',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    mitre: 'T1059.004',
+    remediation:
+      'Remove any prompt instruction or code that constructs a /dev/tcp reverse shell. Deny shell file descriptor redirects (>&, <>) in any context where user-controlled or LLM-generated content is executed. Audit system prompts for reverse-shell command strings.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // bash -i >& /dev/tcp/... and exec fd<>/dev/tcp/... patterns
+      const pattern = /bash\s+-i\s+>&|\/dev\/tcp\/[\w.]+\/\d+|exec\s+\d+<>\/dev\/tcp\//i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'CMD-007',
+    title: 'Named pipe reverse shell — mkfifo piped to shell or netcat',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    mitre: 'T1059.004',
+    remediation:
+      'Remove any prompt instruction or code that combines mkfifo with a shell or netcat invocation. This pattern creates a bidirectional shell channel over a network socket and has no legitimate use in LLM-controlled execution contexts.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+      // mkfifo followed by nc/ncat/netcat/bash/sh (same line or within 3 lines)
+      const mkfifoPattern = /\bmkfifo\b/i;
+      const shellPipePattern = /\b(?:nc|ncat|netcat|bash|sh)\b/i;
+      lines.forEach((line, i) => {
+        if (!mkfifoPattern.test(line)) return;
+        const window = lines.slice(i, Math.min(i + 4, lines.length)).join('\n');
+        if (shellPipePattern.test(window)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+      return results;
+    },
+  },
+  {
+    id: 'CMD-008',
+    title: 'Netcat/ncat with execute flag spawning an interactive shell',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'injection',
+    mitre: 'T1059.004',
+    remediation:
+      'Remove any prompt instruction or code that passes -e or --exec to nc/ncat/netcat pointing at a shell binary. The -e flag hands full shell control to the remote end of the connection and has no legitimate use in LLM agent execution contexts.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // nc/ncat/netcat with -e /bin/sh or -e /bin/bash (or bare sh/bash)
+      const pattern = /\b(?:nc|ncat|netcat)\b[^\n]*\s-e\s+(?:\/bin\/)?(?:ba)?sh\b|\b(?:nc|ncat|netcat)\b[^\n]*--exec\s+(?:\/bin\/)?(?:ba)?sh\b/i;
+      return matchPattern(prompt, pattern);
     },
   },
 ];

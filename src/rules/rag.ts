@@ -190,6 +190,47 @@ export const ragRules: Rule[] = [
       return [];
     },
   },
+  {
+    id: 'RAG-007',
+    title: 'Document metadata field interpolated into prompt without sanitisation',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    mitre: 'T1190',
+    remediation:
+      'Treat all document metadata (title, author, description, URL, tags) as untrusted external content. Truncate, strip control characters, or allowlist-validate metadata field values before interpolating them into prompts. Wrap metadata values in delimiters and label them as "untrusted source metadata". An attacker who can write to the document corpus can inject instructions through metadata fields that bypass content-level filters.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // Fire on template strings and full code-block extractions, not raw .prompt files
+      if (prompt.kind === 'raw') return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // ${doc.metadata.X}, ${chunk.metadata.X}, ${document.metadata.X}, ${result.metadata.X}
+      const metadataInterpolationPattern =
+        /\$\{[^}]*\b(?:doc|chunk|document|passage|result|item|record)\b[^}]*\.\s*metadata\s*[.[][^}]{0,80}\}/i;
+
+      // Suppress if a sanitiser or truncation is applied near the interpolation
+      const sanitiserPattern =
+        /(?:truncate|slice|substring|substr|sanitize|sanitise|escape|strip|replace|encode|trim)\s*\(/i;
+
+      lines.forEach((line, i) => {
+        if (!metadataInterpolationPattern.test(line)) return;
+        const context = lines
+          .slice(Math.max(0, i - 3), Math.min(lines.length, i + 4))
+          .join('\n');
+        if (!sanitiserPattern.test(context)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
 ];
 
 function matchPattern(prompt: ExtractedPrompt, pattern: RegExp): RuleMatch[] {
