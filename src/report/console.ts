@@ -36,6 +36,7 @@ function printFinding(f: Finding, verbose: boolean): void {
   console.log(`    ${DIM}Evidence:${RESET} ${CYAN}${f.evidence}${RESET}`);
   if (verbose) {
     console.log(`    ${DIM}Confidence:${RESET} ${f.confidence}`);
+    if (f.mitre) console.log(`    ${DIM}MITRE:${RESET}      ${CYAN}${f.mitre}${RESET}`);
     console.log(`    ${DIM}Risk points:${RESET} ${f.riskPoints}`);
     console.log(`    ${DIM}Remediation:${RESET} ${f.remediation}`);
   }

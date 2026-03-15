@@ -37,10 +37,11 @@ export function buildMarkdownReport(result: ScanResult): string {
       lines.push(`### \`${fileResult.file}\``);
       lines.push(`*File score: ${fileResult.fileScore}*`);
       lines.push('');
-      lines.push('| Rule | Severity | Line | Title |');
-      lines.push('|------|----------|------|-------|');
+      lines.push('| Rule | Severity | Line | Title | MITRE |');
+      lines.push('|------|----------|------|-------|-------|');
       for (const f of fileResult.findings) {
-        lines.push(`| ${f.id} | ${f.severity} | ${f.lineStart} | ${f.title} |`);
+        const mitreCell = f.mitre ? `[${f.mitre}](https://attack.mitre.org/techniques/${f.mitre.replace('.', '/')})` : '';
+        lines.push(`| ${f.id} | ${f.severity} | ${f.lineStart} | ${f.title} | ${mitreCell} |`);
       }
       lines.push('');
 
@@ -51,6 +52,10 @@ export function buildMarkdownReport(result: ScanResult): string {
         lines.push('');
         lines.push(`**Evidence:** \`${f.evidence}\``);
         lines.push('');
+        if (f.mitre) {
+          lines.push(`**MITRE ATT&CK:** [${f.mitre}](https://attack.mitre.org/techniques/${f.mitre.replace('.', '/')})`);
+          lines.push('');
+        }
         lines.push(`**Remediation:** ${f.remediation}`);
         lines.push('');
         lines.push('</details>');

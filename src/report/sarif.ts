@@ -65,13 +65,16 @@ export function buildSarifReport(result: ScanResult): string {
   const rulesMap = new Map<string, SarifRule>();
   for (const finding of result.allFindings) {
     if (!rulesMap.has(finding.id)) {
+      const tags = ['security', 'prompt-injection'];
+      if (finding.mitre) tags.push(`attack:${finding.mitre}`);
       rulesMap.set(finding.id, {
         id: finding.id,
         name: finding.id,
         shortDescription: { text: finding.title },
         fullDescription: { text: `${finding.title}. ${finding.remediation}` },
+        ...(finding.mitre && { helpUri: `https://attack.mitre.org/techniques/${finding.mitre.replace('.', '/')}` }),
         properties: {
-          tags: ['security', 'prompt-injection'],
+          tags,
           precision: confidenceToPrecision(finding.confidence),
           'problem.severity': finding.severity,
         },

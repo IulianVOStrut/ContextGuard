@@ -13,7 +13,7 @@ export function buildCsvReport(result: ScanResult): string {
   const headers = [
     'rule_id', 'severity', 'confidence',
     'file', 'line_start', 'line_end',
-    'title', 'evidence', 'remediation',
+    'title', 'evidence', 'remediation', 'mitre_technique',
   ];
 
   const rows: string[] = [headers.join(',')];
@@ -29,6 +29,7 @@ export function buildCsvReport(result: ScanResult): string {
       escapeCsv(f.title),
       escapeCsv(f.evidence),
       escapeCsv(f.remediation),
+      escapeCsv(f.mitre ?? ''),
     ].join(','));
   }
 

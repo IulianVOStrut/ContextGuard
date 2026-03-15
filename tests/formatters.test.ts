@@ -268,11 +268,12 @@ describe('HTML formatter', () => {
     expect(html).toContain('data-sev="high"');
   });
 
-  it('is self-contained (no external URLs)', () => {
+  it('loads no external resources (no CDN src= or stylesheet href=)', () => {
     const result = makeScanResult();
     const html = buildHtmlReport(result);
+    // Must not load external scripts, images, or stylesheets
     expect(html).not.toMatch(/src="https?:\/\//);
-    expect(html).not.toMatch(/href="https?:\/\//);
+    expect(html).not.toMatch(/<link[^>]*href="https?:\/\//);
   });
 });
 
@@ -284,7 +285,7 @@ describe('CSV formatter', () => {
     const csv = buildCsvReport(result);
     const rows = csv.split('\n');
     expect(rows).toHaveLength(2); // header + 1 finding
-    expect(rows[0]).toBe('rule_id,severity,confidence,file,line_start,line_end,title,evidence,remediation');
+    expect(rows[0]).toBe('rule_id,severity,confidence,file,line_start,line_end,title,evidence,remediation,mitre_technique');
   });
 
   it('includes all finding fields in the correct column order', () => {
@@ -396,5 +397,125 @@ describe('JUnit XML formatter', () => {
     expect(xml).toContain('<testsuites');
     expect(xml).toContain('tests="0"');
     expect(xml).not.toContain('<testsuite ');
+  });
+});
+
+// ── MITRE ATT&CK formatter integration ───────────────────────────────────────
+
+describe('MITRE formatter integration', () => {
+  const mitreFinding = makeFinding({ id: 'INJ-001', mitre: 'T1190' });
+  const subFinding   = makeFinding({ id: 'PST-001', mitre: 'T1053.003' });
+  const noMitre      = makeFinding({ id: 'JBK-002' });
+
+  function makeTaggedResult(): ScanResult {
+    return makeScanResult({
+      allFindings: [mitreFinding, subFinding, noMitre],
+      files: [{ file: 'src/api.ts', findings: [mitreFinding, subFinding, noMitre], fileScore: 45 }],
+    });
+  }
+
+  // JSON — automatic via JSON.stringify
+  it('JSON output includes mitre field when present', () => {
+    const parsed = JSON.parse(buildJsonReport(makeTaggedResult()));
+    expect(parsed.allFindings[0].mitre).toBe('T1190');
+    expect(parsed.allFindings[1].mitre).toBe('T1053.003');
+  });
+
+  it('JSON output omits mitre key when not set', () => {
+    const parsed = JSON.parse(buildJsonReport(makeTaggedResult()));
+    expect('mitre' in parsed.allFindings[2]).toBe(false);
+  });
+
+  // JSONL
+  it('JSONL includes mitre field on tagged findings', () => {
+    const { buildJsonlReport } = require('../src/report/jsonl');
+    const lines = buildJsonlReport(makeTaggedResult()).split('\n');
+    expect(JSON.parse(lines[0]).mitre).toBe('T1190');
+  });
+
+  // SARIF — tags and helpUri
+  it('SARIF rule tags include attack:T1190 for tagged rule', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'INJ-001');
+    expect(rule.properties.tags).toContain('attack:T1190');
+  });
+
+  it('SARIF rule tags include attack:T1053.003 for sub-technique', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'PST-001');
+    expect(rule.properties.tags).toContain('attack:T1053.003');
+  });
+
+  it('SARIF rule has helpUri pointing to ATT&CK for tagged rule', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'INJ-001');
+    expect(rule.helpUri).toContain('attack.mitre.org/techniques/T1190');
+  });
+
+  it('SARIF rule for sub-technique has helpUri with slash-separated path', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'PST-001');
+    expect(rule.helpUri).toContain('T1053/003');
+  });
+
+  it('SARIF rule without mitre has no helpUri', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'JBK-002');
+    expect(rule.helpUri).toBeUndefined();
+  });
+
+  it('SARIF rule without mitre does not gain attack: tag', () => {
+    const sarif = JSON.parse(buildSarifReport(makeTaggedResult()));
+    const rule = sarif.runs[0].tool.driver.rules.find((r: { id: string }) => r.id === 'JBK-002');
+    const attackTags = (rule.properties.tags as string[]).filter(t => t.startsWith('attack:'));
+    expect(attackTags).toHaveLength(0);
+  });
+
+  // CSV
+  it('CSV header includes mitre_technique column', () => {
+    const csv = buildCsvReport(makeTaggedResult());
+    expect(csv.split('\n')[0]).toContain('mitre_technique');
+  });
+
+  it('CSV data row contains MITRE technique ID for tagged finding', () => {
+    const csv = buildCsvReport(makeTaggedResult());
+    expect(csv.split('\n')[1]).toContain('T1190');
+  });
+
+  it('CSV data row has empty mitre_technique for untagged finding', () => {
+    const result = makeScanResult({ allFindings: [noMitre], files: [{ file: 'src/api.ts', findings: [noMitre], fileScore: 0 }] });
+    const csv = buildCsvReport(result);
+    // Last field in data row should be empty (no technique)
+    const dataRow = csv.split('\n')[1];
+    expect(dataRow.endsWith(',')).toBe(true);
+  });
+
+  // Markdown
+  it('Markdown table header includes MITRE column', () => {
+    const md = buildMarkdownReport(makeTaggedResult());
+    expect(md).toContain('| MITRE |');
+  });
+
+  it('Markdown table row contains linked ATT&CK technique', () => {
+    const md = buildMarkdownReport(makeTaggedResult());
+    expect(md).toContain('[T1190](https://attack.mitre.org/techniques/T1190)');
+  });
+
+  it('Markdown detail block includes MITRE ATT&CK link for tagged finding', () => {
+    const md = buildMarkdownReport(makeTaggedResult());
+    expect(md).toContain('**MITRE ATT&CK:**');
+    expect(md).toContain('T1053/003');
+  });
+
+  // JUnit
+  it('JUnit failure body includes MITRE ATT&CK line for tagged finding', () => {
+    const xml = buildJunitReport(makeTaggedResult());
+    expect(xml).toContain('MITRE ATT&amp;CK: T1190');
+  });
+
+  it('JUnit failure body has no MITRE line for untagged finding', () => {
+    const result = makeScanResult({ allFindings: [noMitre], files: [{ file: 'src/api.ts', findings: [noMitre], fileScore: 0 }] });
+    const xml = buildJunitReport(result);
+    expect(xml).not.toContain('MITRE ATT');
   });
 });
