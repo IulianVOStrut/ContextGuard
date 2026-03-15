@@ -417,6 +417,93 @@ export const injectionRules: Rule[] = [
     },
   },
   {
+    id: 'INJ-012',
+    title: 'Conversation history spread into messages array without sanitisation',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    mitre: 'T1190',
+    remediation:
+      'Sanitise and validate each message in conversation history before replaying it in a new LLM request. Filter user-role messages for instruction-like content, enforce a maximum history length, and never replay messages from storage without a trust-boundary check. An attacker who controls any prior turn can plant jailbreak instructions that activate on the next request.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      // Detect: spreading a named history/chat array directly into messages, e.g.:
+      //   messages.push(...chatHistory)
+      //   [...conversationHistory, newMsg]
+      //   messages = [...storedMessages, {role: 'user', ...}]
+      const pattern =
+        /(?:messages?\s*\.\s*push\s*\(\s*\.\.\.\s*(?:history|previousMessages?|priorMessages?|chatHistory|storedMessages?|conversationHistory|pastMessages?|msgHistory|messageHistory)\b|\.\.\.\s*(?:history|previousMessages?|priorMessages?|chatHistory|storedMessages?|conversationHistory|pastMessages?|msgHistory|messageHistory)\s*[,\]])/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'INJ-013',
+    title: 'Tool or function call result inserted into messages without sanitisation',
+    severity: 'high',
+    confidence: 'high',
+    category: 'injection',
+    mitre: 'T1190',
+    remediation:
+      'Validate and sanitise tool call results before inserting them into the messages array as role: "tool" or role: "function" content. Enforce a strict output schema for each tool, truncate unexpectedly long results, and strip instruction-like phrases before the content re-enters the model context. A compromised or adversarial external tool can return injection payloads that hijack the next model turn.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Detect role: "tool" or role: "function" with a variable (not a literal) content value.
+      // Check a 5-line window to handle multi-line object literals.
+      lines.forEach((line, i) => {
+        if (!/role\s*:\s*['"`](?:tool|function)['"`]/i.test(line)) return;
+        const window = lines.slice(i, Math.min(i + 5, lines.length)).join('\n');
+        if (/content\s*:\s*(?!['"`\d])\s*[a-z_$][a-z0-9_$.[\]]*/i.test(window)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'INJ-014',
+    title: 'LLM completion piped as user-role content into a subsequent LLM call',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    mitre: 'T1190',
+    remediation:
+      'Never feed the raw output of one LLM call directly as the user-role content of a second LLM call without validation. Validate and sanitise model outputs between pipeline stages, or route them through a human-in-the-loop step. An injection payload in the first response can cascade through every downstream model in the chain.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Detect: role: "user" message whose content field derives directly from an LLM
+      // response object — indicated by .content, .text, or .choices accessor on the value.
+      // e.g. { role: 'user', content: response.content }
+      //      { role: 'user', content: completion.choices[0].message.content }
+      const llmOutputContentPattern =
+        /content\s*:\s*[a-z_$][a-z0-9_$]*\s*(?:\??\.)?\s*(?:content\b|text\b|choices?\s*[\[.])/i;
+
+      lines.forEach((line, i) => {
+        if (!/role\s*:\s*['"`]user['"`]/i.test(line)) return;
+        const window = lines.slice(i, Math.min(i + 5, lines.length)).join('\n');
+        if (llmOutputContentPattern.test(window)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
     id: 'INJ-016',
     title: 'Template engine renders user-controlled string as template source',
     severity: 'critical',

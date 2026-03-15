@@ -2237,6 +2237,217 @@ describe('INJ-016: Template engine renders user-controlled string as template so
   });
 });
 
+// ── INJ-012: Conversation history spread injection ───────────────────────────
+
+describe('INJ-012: Conversation history spread into messages without sanitisation', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-012')!;
+
+  it('flags messages.push(...chatHistory)', () => {
+    const code = 'messages.push(...chatHistory);\nmessages.push({ role: "user", content });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'chat.ts')).toHaveLength(1);
+  });
+
+  it('flags [...conversationHistory, newMsg] spread', () => {
+    const code = 'const msgs = [...conversationHistory, { role: "user", content: userInput }];\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'chat.ts')).toHaveLength(1);
+  });
+
+  it('flags messages.push(...previousMessages)', () => {
+    const code = 'messages.push(...previousMessages);\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'chat.ts')).toHaveLength(1);
+  });
+
+  it('flags [...storedMessages, systemMsg] spread', () => {
+    const code = 'const context = [...storedMessages, { role: "system", content: sys }];\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('does not flag spreading an unrelated array', () => {
+    const code = 'messages.push(...tools);\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'chat.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = '...chatHistory';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'chat.ts')).toHaveLength(0);
+  });
+});
+
+// ── INJ-013: Tool/function call result injection ──────────────────────────────
+
+describe('INJ-013: Tool or function call result inserted into messages without sanitisation', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-013')!;
+
+  it('flags role:"tool" with variable content', () => {
+    const code = 'messages.push({ role: "tool", content: toolResult, tool_call_id: id });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags role:"function" with variable content', () => {
+    const code = 'messages.push({ role: "function", name: "search", content: searchOutput });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('flags multi-line object with role:tool and variable content', () => {
+    const code = [
+      'messages.push({',
+      '  role: "tool",',
+      '  tool_call_id: call.id,',
+      '  content: apiResponse,',
+      '});',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(1);
+  });
+
+  it('does not flag role:"tool" with a string literal content', () => {
+    const code = 'messages.push({ role: "tool", content: "search results here" });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'agent.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'role: "tool", content: toolResult';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'agent.ts')).toHaveLength(0);
+  });
+});
+
+// ── INJ-014: LLM completion chaining injection ────────────────────────────────
+
+describe('INJ-014: LLM completion piped as user-role content into a subsequent LLM call', () => {
+  const rule = injectionRules.find(r => r.id === 'INJ-014')!;
+
+  it('flags role:"user" with content from response.content', () => {
+    const code = 'messages.push({ role: "user", content: response.content });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('flags role:"user" with content from completion.text', () => {
+    const code = 'messages.push({ role: "user", content: completion.text });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('flags role:"user" with content from choices accessor', () => {
+    const code = 'messages.push({ role: "user", content: result.choices[0].message.content });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('flags multi-line role:"user" with LLM output content', () => {
+    const code = [
+      'messages.push({',
+      '  role: "user",',
+      '  content: summarisationResponse.content,',
+      '});',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(1);
+  });
+
+  it('does not flag role:"user" with a static string literal', () => {
+    const code = 'messages.push({ role: "user", content: "Hello, what is the capital?" });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(0);
+  });
+
+  it('does not flag role:"assistant" with LLM output content (correct history pattern)', () => {
+    const code = 'messages.push({ role: "assistant", content: response.content });\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'pipeline.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'role: "user", content: response.content';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'pipeline.ts')).toHaveLength(0);
+  });
+});
+
+// ── RAG-007: Document metadata field injection ────────────────────────────────
+
+describe('RAG-007: Document metadata field interpolated into prompt without sanitisation', () => {
+  const rule = ragRules.find(r => r.id === 'RAG-007')!;
+
+  it('flags ${doc.metadata.title} interpolation', () => {
+    const code = 'const prompt = `Source: ${doc.metadata.title}\n${doc.pageContent}`;\n';
+    expect(rule.check(makePrompt(code, 1, 'template-string'), 'rag.ts')).toHaveLength(1);
+  });
+
+  it('flags ${chunk.metadata.author} interpolation', () => {
+    const code = 'const ctx = `Author: ${chunk.metadata.author}. Content: ${chunk.text}`;\n';
+    expect(rule.check(makePrompt(code, 1, 'template-string'), 'rag.ts')).toHaveLength(1);
+  });
+
+  it('flags ${document.metadata.url} interpolation', () => {
+    const code = 'const snippet = `From ${document.metadata.url}: ${document.metadata.description}`;\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'rag.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when a sanitiser is applied nearby', () => {
+    const code = [
+      'const title = truncate(doc.metadata.title, 100);',
+      'const prompt = `Source: ${doc.metadata.title}`;',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'template-string'), 'rag.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = '${doc.metadata.title}';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'rag.ts')).toHaveLength(0);
+  });
+});
+
+// ── OUT-005: LLM output cached without validation ─────────────────────────────
+
+describe('OUT-005: LLM output written to shared cache without validation', () => {
+  const rule = outputHandlingRules.find(r => r.id === 'OUT-005')!;
+
+  it('flags redis.set with LLM response variable', () => {
+    const code = [
+      'const response = await openai.chat.completions.create({ model: "gpt-4o", messages });',
+      'await redis.set(cacheKey, response.choices[0].message.content, "EX", 3600);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(1);
+  });
+
+  it('flags cache.set with completion variable', () => {
+    const code = [
+      'const completion = await openai.chat.completions.create({ messages });',
+      'await cache.set(key, completion);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(1);
+  });
+
+  it('flags nodeCache.set with result variable', () => {
+    const code = [
+      'const result = await ChatAnthropic().invoke(messages);',
+      'nodeCache.set("resp", result);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(1);
+  });
+
+  it('does not flag when a validation function is present', () => {
+    const code = [
+      'const response = await openai.chat.completions.create({ messages });',
+      'const safe = validateCache(response.choices[0].message.content);',
+      'await cache.set(key, safe);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(0);
+  });
+
+  it('does not flag when HMAC signing is present', () => {
+    const code = [
+      'const output = await ChatOpenAI().invoke(messages);',
+      'const signed = hmac(output.content, secret);',
+      'await redis.set(key, signed);',
+    ].join('\n');
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(0);
+  });
+
+  it('does not fire when there is no LLM call in the file', () => {
+    const code = 'await cache.set("key", response);\n';
+    expect(rule.check(makePrompt(code, 1, 'code-block'), 'cache.ts')).toHaveLength(0);
+  });
+
+  it('does not fire on raw kind', () => {
+    const code = 'cache.set(key, response)';
+    expect(rule.check(makePrompt(code, 1, 'raw'), 'cache.ts')).toHaveLength(0);
+  });
+});
+
 // ── Supply chain rules (SCH-001, SCH-003) ────────────────────────────────────
 
 describe('SCH-001: Unsafe pickle or torch deserialization', () => {

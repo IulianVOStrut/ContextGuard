@@ -132,6 +132,51 @@ export const outputHandlingRules: Rule[] = [
     },
   },
   {
+    id: 'OUT-005',
+    title: 'LLM output written to shared cache without validation — cache poisoning risk',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'injection',
+    mitre: 'T1565',
+    remediation:
+      'Never store raw LLM completions directly in a shared cache (Redis, Memcached, node-cache). Validate and sanitise the output before caching, sign or hash cached values to detect tampering, and re-validate on retrieval before use in any downstream prompt. A cache poisoning attack lets one adversarial request inject malicious content into responses served to all future callers who hit the same cache key.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+
+      const text = prompt.text;
+
+      // Must have both an LLM completion call and a cache write in the same file
+      const llmCallPattern =
+        /(?:\.chat\.completions\.create|\.messages\.create|\.complete\s*\(|ChatOpenAI\b|ChatAnthropic\b|\.invoke\s*\()/i;
+      const cacheWritePattern =
+        /(?:(?:redis|cache|memcached|nodeCache|cacheClient|store)\s*(?:\??\.)?\s*(?:set|put|store|hset|setex|mset)\s*\(|await\s+cache\.set\s*\(|\.setCache\s*\()/i;
+
+      if (!llmCallPattern.test(text) || !cacheWritePattern.test(text)) return [];
+
+      // Suppress if a validation or signing step is present between the LLM call and cache write
+      if (/(?:validateCache|sanitiseCache|sanitizeCache|hashResponse|signedCache|cacheHash|hmac|sign(?:ature)?)\s*\(/i.test(text)) return [];
+
+      // Flag the cache write line when its argument contains an LLM output variable name
+      const llmOutputArgPattern =
+        /\b(?:response|completion|output|result|answer|content|message|generated|choices)\b/i;
+
+      const results: RuleMatch[] = [];
+      const lines = text.split('\n');
+
+      lines.forEach((line, i) => {
+        if (cacheWritePattern.test(line) && llmOutputArgPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
     id: 'OUT-004',
     title: 'Python eval() or exec() called with LLM-generated output',
     severity: 'critical',
