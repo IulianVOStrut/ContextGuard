@@ -7,11 +7,26 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ---
+
+## The ContextHound ecosystem
+
+ContextHound is available across your entire development and browsing workflow:
+
+| Tool | What it does | Install |
+|---|---|---|
+| **CLI / npm package** | Scans your codebase for prompt injection vulnerabilities. Integrates with GitHub Actions, outputs SARIF, JSON, HTML, and more. | `npm install -g context-hound` |
+| **VS Code extension** | Inline findings as you code, code actions, output channel, status bar. | [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=ContextHound.contexthound) |
+| **Browser extension** | Real-time scan pill on any AI chat interface, DevTools panel for LLM API traffic, popup scanner. Chrome and Firefox. | Awaiting store review — [source](https://github.com/IulianVOStrut/ContextHound-Extensions) |
+
+---
+
 ## ☕ Support the project
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D1D01UKFNS)
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/I_VO_S)
+
 ---
 
 ## Why ContextHound?
@@ -607,6 +622,36 @@ Detection rate:      100.0%  (8/8 expected findings triggered)
 ```
 
 The benchmark exits with code 1 if any false positives or false negatives are found, making it suitable as a CI quality gate for rule changes. To add a fixture, drop a file into `benchmarks/safe/` or `benchmarks/unsafe/` and update `benchmarks/labels.json` with the expected findings.
+
+---
+
+## Browser Extension
+
+The ContextHound browser extension brings real-time prompt injection detection to Chrome and Firefox. It uses the same rule engine as the CLI, compiled and bundled locally — no network requests, no backend.
+
+> **Status:** Submitted to Chrome Web Store and Firefox AMO. Currently awaiting store review. Source available at [github.com/IulianVOStrut/ContextHound-Extensions](https://github.com/IulianVOStrut/ContextHound-Extensions).
+
+### Features
+
+**Scan pill**
+A lightweight indicator appears next to any AI chat input on any website. As you type, the extension scans the text against 70 detection rules and displays a risk score and findings in a dropdown panel — no page navigation required.
+
+**DevTools panel**
+Open browser DevTools and select the ContextHound tab to monitor live LLM API traffic. The extension intercepts outbound requests to OpenAI, Anthropic, Google Gemini, Mistral, Groq, Cohere, DeepSeek, and other services, scanning both the request body and response for injection content. A toolbar badge reflects the highest risk score seen in the current session.
+
+**Popup scanner**
+Click the toolbar icon to paste and scan any text manually. Useful for reviewing a prompt or system instruction received from a third party before using it.
+
+### How the browser extension captures request bodies
+
+Chrome and Firefox's DevTools HAR API (`onRequestFinished`) does not reliably include request body bytes for streaming/SSE responses, which most AI chat services use. The extension solves this with a two-layer approach:
+
+1. `chrome.webRequest.onBeforeRequest` intercepts raw request bytes in the service worker before the request is sent, caches them briefly in `chrome.storage.session` (TTL: 5 minutes).
+2. When `onRequestFinished` fires and `postData` is absent, the DevTools page fetches the cached body from the service worker via a `POP_BODY_CACHE` message.
+
+### Privacy
+
+The extension collects no user data. All scanning is local. See the [privacy policy](https://contexthound.com/privacy).
 
 ---
 
