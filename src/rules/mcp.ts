@@ -226,6 +226,60 @@ export const mcpRules: Rule[] = [
     },
   },
   {
+    id: 'MCP-011',
+    title: 'MCP tool description contains prompt injection instruction verbs',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'mcp',
+    remediation:
+      'Validate MCP tool description fields against a content allowlist before registering them. A malicious MCP server can embed prompt injection instructions inside tool descriptions that are then forwarded to an LLM. Description fields must contain only documentation text — never imperative instruction phrases.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      if (!MCP_CONTEXT_PATTERN.test(prompt.text)) return [];
+
+      const results: RuleMatch[] = [];
+      const lines = prompt.text.split('\n');
+
+      // Detect a description: string field whose value contains injection-like phrases.
+      // The regex matches the field key, then captures the string value and checks it
+      // for imperative override language.
+      const descFieldPattern = /\bdescription\s*:\s*['"`]/i;
+      const injectionVerbPattern =
+        /(?:ignore\s+(?:all\s+)?(?:previous|prior|above)\s+instructions?|override\s+(?:your\s+)?(?:system|safety|guidelines?)|disregard\s+(?:all\s+)?(?:guidelines?|instructions?|rules?)|you\s+are\s+now\s+(?:a|an)\s+(?:different|unrestricted|uncensored)|from\s+now\s+on\s+(?:you|ignore|act))/i;
+
+      lines.forEach((line, i) => {
+        if (descFieldPattern.test(line) && injectionVerbPattern.test(line)) {
+          results.push({
+            evidence: line.trim(),
+            lineStart: prompt.lineStart + i,
+            lineEnd: prompt.lineStart + i,
+          });
+        }
+      });
+
+      return results;
+    },
+  },
+  {
+    id: 'MCP-012',
+    title: 'MCP tool name contains prompt control keywords or suspicious characters',
+    severity: 'high',
+    confidence: 'medium',
+    category: 'mcp',
+    remediation:
+      'MCP tool names must be simple, descriptive identifiers. Names containing prompt control keywords (system, override, inject, admin, eval) or non-alphanumeric control characters may be used to confuse the LLM\'s tool-selection logic or smuggle instructions through the tool name field.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      if (prompt.kind !== 'code-block') return [];
+      if (!MCP_CONTEXT_PATTERN.test(prompt.text)) return [];
+
+      // Detect server.tool() or server.setRequestHandler() calls where the name
+      // string literal contains suspicious keywords or non-alphanumeric characters.
+      const pattern =
+        /(?:server|McpServer)\.tool\s*\(\s*['"`][^'"`\n]*(?:system|override|inject|eval|admin|root|sudo|[<>{};|&$])[^'"`\n]*['"`]/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
     id: 'MCP-010',
     title: 'MCP transport event payload injected into LLM context without sanitisation',
     severity: 'critical',

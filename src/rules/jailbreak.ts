@@ -156,4 +156,62 @@ export const jailbreakRules: Rule[] = [
       return matchPattern(prompt, pattern);
     },
   },
+  {
+    id: 'JBK-010',
+    title: 'Meta-command activation keyword detected',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove any activation keywords that claim to switch the model into an unrestricted operating mode. Strings such as GODMODE, LIBERTAS FACTOR, and RESET_CORTEX are social-engineering tokens with no legitimate use in production system prompts.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // Known activation codenames used to trigger jailbreak personas or bypass safety training.
+      // DAN is already covered by JBK-001; this rule targets the non-DAN family.
+      const pattern =
+        /\bGODMODE\b|\bLIBERTAS[\s_-]FACTOR\b|\bRESET[_\s-]CORTEX\b|\bJBK[_\s-]ACTIVATE\b|\bUNRESTRICTED[_\s-]MODE\b|\bDEV[_\s-]MODE[_\s-]OVERRIDE\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'JBK-011',
+    title: 'Instruction dismissal — prior rules framed as obsolete or superseded',
+    severity: 'high',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove any phrasing that frames prior system instructions as outdated, deprecated, or no longer in force. Attackers use soft-dismissal language to erode guideline authority without triggering direct-override detectors.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:treat\s+(?:(?:previous|prior|above|existing|all)\s+)?(?:instructions?|rules?|guidelines?|constraints?|policies?)\s+as\s+(?:obsolete|void|invalid|null|deprecated|irrelevant|superseded)|(?:instructions?|rules?|guidelines?|constraints?)\s+(?:are\s+(?:now\s+)?)?(?:obsolete|void|null|invalid|deprecated|superseded|no\s+longer\s+valid))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'JBK-012',
+    title: 'Priority downgrade — system instructions demoted below user input',
+    severity: 'high',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove any instruction that repositions user or external input as having higher authority than the system prompt. Trust hierarchy must be enforced at the infrastructure level and is not negotiable via prompt content.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:(?:system|developer|operator)\s+(?:instructions?|prompt|rules?|guidelines?)\s+(?:should\s+be|are|have)\s+(?:lower|less|minimal)\s+priority|(?:user|human)\s+(?:instructions?|input|requests?)\s+(?:should\s+)?overrides?\s+(?:system|developer|operator)|demote\s+(?:the\s+)?(?:system|developer|operator)\s+(?:instructions?|prompt|rules?)|(?:system|developer)\s+(?:instructions?|prompt)\s+(?:rank|priority)\s+(?:below|under|after)\s+user)/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'JBK-013',
+    title: 'Training or safety constraint explicitly declared void',
+    severity: 'high',
+    confidence: 'high',
+    category: 'jailbreak',
+    remediation:
+      'Remove any instruction that declares the model\'s safety training, alignment constraints, or prior context null, overridden, or cancelled. Safety properties are not runtime state and cannot be voided via prompt.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:(?:your\s+)?(?:safety\s+)?training\s+(?:is\s+)?(?:overridden|cancelled|nullified|revoked|void|reset)|(?:alignment|safety)\s+constraints?\s+(?:are\s+)?(?:void|null|cancelled|overridden|removed|disabled)|previous\s+(?:instructions?|context|rules?)\s+(?:are\s+)?(?:overridden|cancelled|nullified|revoked|void))/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
 ];

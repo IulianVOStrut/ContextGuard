@@ -1,6 +1,21 @@
 import type { Rule, RuleMatch } from './types.js';
 import type { ExtractedPrompt } from '../scanner/extractor.js';
 
+function matchPattern(prompt: ExtractedPrompt, pattern: RegExp): RuleMatch[] {
+  const results: RuleMatch[] = [];
+  const lines = prompt.text.split('\n');
+  lines.forEach((line, i) => {
+    if (pattern.test(line)) {
+      results.push({
+        evidence: line.trim(),
+        lineStart: prompt.lineStart + i,
+        lineEnd: prompt.lineStart + i,
+      });
+    }
+  });
+  return results;
+}
+
 export const supplyChainRules: Rule[] = [
   {
     id: 'SCH-001',
@@ -47,6 +62,50 @@ export const supplyChainRules: Rule[] = [
       });
 
       return results;
+    },
+  },
+  {
+    id: 'SCH-004',
+    title: 'Model safety ablation package in dependency list',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'supply-chain',
+    remediation:
+      'Remove packages designed to ablate or remove model safety training from dependency files. These tools modify model weights to strip refusal behaviour, producing models with no safety guarantees. They have no legitimate use in production AI systems.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // Matches package names in requirements.txt, pyproject.toml, package.json,
+      // import statements, or pip/npm install commands anywhere in the scanned content.
+      const pattern = /\b(?:obliteratus|abliterator|refusal-ablation|llm-abliterator|uncensor-lm|refusal-removal)\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'SCH-005',
+    title: 'Model refusal removal script detected',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'supply-chain',
+    remediation:
+      'Remove scripts that strip, retrain, or fine-tune out model refusal behaviour. These scripts produce uncensored model variants with no content safety and must not be present in production AI pipelines.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      // Script filenames referenced via import, exec, subprocess, or direct path
+      const pattern =
+        /\b(?:uncensor\.py|remove_refusals?\.py|abliterate(?:ion)?\.py|strip_safety\.py|bypass_alignment\.py)\b/i;
+      return matchPattern(prompt, pattern);
+    },
+  },
+  {
+    id: 'SCH-006',
+    title: 'Package manager install of model safety bypass tooling',
+    severity: 'critical',
+    confidence: 'high',
+    category: 'supply-chain',
+    remediation:
+      'Remove any pip, uv, or npm install command that references model-censorship bypass packages. The presence of such install commands in scripts, Dockerfiles, or CI pipelines indicates the build process may produce unsafe model artefacts.',
+    check(prompt: ExtractedPrompt): RuleMatch[] {
+      const pattern =
+        /(?:pip(?:3)?\s+install|uv\s+(?:pip\s+)?install|poetry\s+add|conda\s+install|npm\s+(?:install|i)\s)[^\n]*\b(?:obliteratus|abliterator|refusal-ablation|llm-abliterator|uncensor-lm|refusal-removal)\b/i;
+      return matchPattern(prompt, pattern);
     },
   },
   {
